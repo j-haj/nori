@@ -1,0 +1,10 @@
+context_version: 1
+module: sdk_python
+language: python
+api_surface: "same as TS (snake_case)"
+impl_notes:
+  - "Use grpc.aio; preserve binary types for keys/values."
+  - "Thread-safe client; background task watches cluster view."
+tests:
+  - "hash parity vectors"
+  - "lease-read vs read-index fallback"

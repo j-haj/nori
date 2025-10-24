@@ -1,0 +1,29 @@
+context_version: 1
+module: product
+name: NoriKV
+goals:
+  - Linearizable writes; fast reads with leader leases (fallback to read-index).
+  - Simple ops: single binary + single YAML; Docker Compose + Helm.
+  - Portable SDKs (TS/JS, Python, Go, Java) with identical hashing/routing.
+  - First-class observability: pluggable metrics + rich live visualization events.
+non_goals_v1:
+  - Multi-key ACID transactions
+  - Secondary indexes
+  - Active/active cross-DC
+slos:
+  latency_ms:
+    get_p50: 2
+    get_p95: 10
+    put_p95: 20
+  availability: ">= 99.9%"
+  durability: "Ack after Raft majority commit; WAL fsync policy configurable"
+limits:
+  max_key_bytes: 1024
+  max_value_bytes:
+    hard: 1048576
+    soft_guidance: 262144
+  request_max_bytes: 2097152
+  ttl_support: true
+security_defaults:
+  mtls: optional in MVP; required in prod
+  at_rest_encryption: optional

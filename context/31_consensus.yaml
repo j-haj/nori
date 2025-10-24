@@ -1,0 +1,42 @@
+context_version: 1
+module: consensus
+protocol: "Raft per-shard"
+traits:
+  replicated_log_trait: |
+    #[async_trait::async_trait]
+    pub trait ReplicatedLog: Send + Sync {
+      async fn propose(&self, cmd: Bytes) -> Result<LogIndex, Error>;
+      async fn read_index(&self) -> Result<(), Error>;
+      fn is_leader(&self) -> bool;
+      fn leader(&self) -> Option<NodeId>;
+      async fn install_snapshot(&self, snap: Box<dyn Read + Send>) -> Result<(), Error>;
+      fn subscribe_applied(&self) -> tokio::sync::mpsc::Receiver<(LogIndex, Bytes)>;
+    }
+timers:
+  heartbeat_ms: 150
+  election_timeout_ms: { min: 300, max: 600 }
+  lease_ms: 2000
+reads:
+  default: "leader lease"
+  fallback: "read-index on suspicion/lease expiry"
+reconfiguration:
+  method: "joint consensus"
+snapshots:
+  trigger:
+    - "log_bytes > 256 MiB OR last_applied - last_snapshot_index > 1_000_000"
+failure_behavior:
+  quorum_loss: "reject writes; serve stale_ok only if requested"
+  split_brain_guard: "term monotonicity + majority quorum"
+observability_hooks:
+  metrics:
+    - raft_commit_ms
+    - raft_apply_ms
+    - raft_elections_total
+    - raft_role{role}
+    - read_index_ms
+  events:
+    - Raft(VoteReq, VoteGranted, LeaderElected, StepDown)
+    - Shard(SnapshotStart, SnapshotDone)
+tests:
+  - "linearizability under partitions/restarts"
+  - "election storm with ±200ms skew → single leader per term"

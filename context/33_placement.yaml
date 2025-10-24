@@ -1,0 +1,16 @@
+context_version: 1
+module: placement
+purpose: "Deterministic planning of shards → replica sets; minimal-move diffs."
+hashing:
+  key_hash: "xxhash64(seed=0)"
+  consistent_hash: "jump_consistent_hash"
+virtual_shards: 1024
+replication_factor: 3
+weighted_variant: "HRW/Rendezvous (optional)"
+plan_api: |
+  pub trait Placement {
+    fn plan(&self, view:&ClusterView, total_shards:u32, rf:usize) -> Assignment;
+    fn diff(old:&Assignment, new:&Assignment) -> MovePlan;
+  }
+sdk_parity:
+  - "Publish test vectors for key→shard across SDKs."

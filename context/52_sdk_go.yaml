@@ -1,0 +1,12 @@
+context_version: 1
+module: sdk_go
+language: go
+api_surface:
+  - "Put(ctx, key []byte, value []byte, opts ...Option) (Version, error)"
+  - "Get(ctx, key []byte, opts ...Option) (Value, Version, error)"
+routing:
+  - "xxhash64 + jump; avoid map allocs in hot path"
+concurrency:
+  - "single flight for leader discovery per shard"
+tests:
+  - "hash parity; failover routing; idempotent retries"

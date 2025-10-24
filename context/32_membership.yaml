@@ -1,0 +1,27 @@
+context_version: 1
+module: membership
+protocol: "SWIM-like gossip/failure detector"
+api:
+  membership_trait: |
+    #[async_trait::async_trait]
+    pub trait Membership: Send + Sync {
+      fn view(&self) -> ClusterView;
+      fn events(&self) -> broadcast::Receiver<MembershipEvent>;
+      async fn join(&self, seed: SocketAddr) -> Result<(), Error>;
+      async fn leave(&self) -> Result<(), Error>;
+    }
+transport: "Trait-based (UDP/TCP/QUIC adapters) + mem transport for sims"
+tuning:
+  probe_ms: 1000
+  suspicion_ms: 5000
+  dissemination_fanout: 3
+observability_hooks:
+  metrics:
+    - swim_probes_total
+    - swim_rtt_ms
+    - membership_flaps_total
+  events:
+    - Swim(Alive, Suspect, Confirm, Leave)
+tests:
+  - "eventual convergence with loss/dup/reorder"
+  - "false-positive budget within target"

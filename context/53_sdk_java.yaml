@@ -1,0 +1,8 @@
+context_version: 1
+module: sdk_java
+language: java
+design:
+  - "Blocking and async (CompletableFuture) variants"
+  - "Netty gRPC; shaded deps to avoid conflicts"
+api: ["put", "get", "delete", "compareAndSet"]
+tests: ["hash parity", "leader failover"]

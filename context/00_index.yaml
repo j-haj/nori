@@ -1,0 +1,16 @@
+context_version: 1
+project:
+  name: NoriKV
+  tagline: "A sharded, Raft-replicated, log-structured key–value store with portable SDKs."
+how_to_use:
+  - "Start with 10_product.yaml for goals/SLOs/limits."
+  - "See 20_architecture.yaml for crates, layering, and published packages."
+  - "Storage internals in 30_storage.yaml; Raft in 31_consensus.yaml; SWIM in 32_membership.yaml."
+  - "Hashing/placement in 33_placement.yaml. Transport/API in 34_transport.yaml + 40_protocols.proto."
+  - "Observability in 35_metrics.yaml; live dashboard in 36_dashboard.yaml."
+  - "SDK guidance in 50–53 files. Ops in 60_ops.yaml. Tests in 70_testkit.yaml."
+  - "Publishing policy in 95_publishing.yaml. Documentation blueprint in 05_docs.yaml."
+generation_guidance:
+  - "Favor small, testable crates. Keep traits stable; extend via adapters."
+  - "All hashing must use the shared code path defined in 33_placement.yaml."
+  - "Emit metrics/events via nori-observe; never import vendor telemetry in core crates."
