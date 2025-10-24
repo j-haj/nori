@@ -11,4 +11,6 @@ pub mod record;
 pub mod segment;
 
 pub use record::{Compression, Record, RecordError};
-pub use segment::{Position, SegmentConfig, SegmentError, SegmentManager, SegmentReader};
+pub use segment::{
+    FsyncPolicy, Position, SegmentConfig, SegmentError, SegmentManager, SegmentReader,
+};
