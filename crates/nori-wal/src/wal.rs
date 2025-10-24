@@ -45,10 +45,10 @@ impl Default for WalConfig {
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     let config = WalConfig::default();
-///     let wal = Wal::open(config).await?;
+///     let (wal, _recovery_info) = Wal::open(config).await?;
 ///
 ///     // Append a record
-///     let record = Record::put(b"key", b"value");
+///     let record = Record::put(b"key".as_slice(), b"value".as_slice());
 ///     let pos = wal.append(&record).await?;
 ///
 ///     // Explicitly sync to disk
@@ -139,6 +139,19 @@ impl Wal {
     /// Returns the WAL configuration.
     pub fn config(&self) -> &WalConfig {
         &self.config
+    }
+
+    /// Deletes all segments before the given position.
+    ///
+    /// This is used for garbage collection after data has been compacted or
+    /// replicated. Returns the number of segments deleted.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the data in these segments is no longer needed
+    /// (e.g., it has been compacted into SSTables or safely replicated).
+    pub async fn delete_segments_before(&self, position: Position) -> Result<u64, SegmentError> {
+        self.manager.delete_segments_before(position).await
     }
 }
 

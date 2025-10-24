@@ -185,6 +185,58 @@ impl SegmentManager {
         })
     }
 
+    /// Deletes all segments before the given position.
+    ///
+    /// This is used for garbage collection after data has been compacted or
+    /// replicated. Any segment with ID < position.segment_id will be deleted.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the data in these segments is no longer needed
+    /// (e.g., it has been compacted into SSTables or safely replicated).
+    pub async fn delete_segments_before(&self, position: Position) -> Result<u64, SegmentError> {
+        let current_id = *self.current_id.lock().await;
+
+        // Don't delete the current segment
+        if position.segment_id >= current_id {
+            return Ok(0);
+        }
+
+        let mut deleted_count = 0u64;
+        let mut entries = tokio::fs::read_dir(&self.config.dir).await?;
+
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+
+            // Skip non-WAL files
+            if path.extension().and_then(|e| e.to_str()) != Some("wal") {
+                continue;
+            }
+
+            // Parse segment ID from filename
+            let segment_id = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(|s| s.parse::<u64>().ok());
+
+            // Delete if this segment is before the cutoff position
+            if let Some(id) = segment_id {
+                if id < position.segment_id {
+                    tokio::fs::remove_file(&path).await?;
+                    deleted_count += 1;
+
+                    self.meter.emit(VizEvent::Wal(WalEvt {
+                        node: self.node_id,
+                        seg: id,
+                        kind: WalKind::SegmentGc,
+                    }));
+                }
+            }
+        }
+
+        Ok(deleted_count)
+    }
+
     /// Appends a record to the WAL, rotating if necessary.
     /// Applies the configured fsync policy.
     pub async fn append(&self, record: &Record) -> Result<Position, SegmentError> {
