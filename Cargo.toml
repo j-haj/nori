@@ -1,0 +1,25 @@
+[workspace]
+members = [
+  "crates/nori-observe",
+  "crates/nori-observe-prom",
+  "crates/nori-observe-otlp",
+  "crates/nori-wal",
+  "crates/nori-sstable",
+  "crates/nori-lsm",
+  "crates/nori-swim",
+  "crates/nori-raft",
+  "crates/norikv-types",
+  "crates/norikv-placement",
+  "crates/norikv-transport-grpc",
+  "crates/norikv-testkit",
+  "apps/norikv-server",
+  "apps/norikv-vizd",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.metadata.release]
+shared-version = false

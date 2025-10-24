@@ -1,0 +1,11 @@
+[package]
+name = "nori-lsm"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Embeddable LSM engine (WAL+SST+compaction+snapshots)."
+repository = "https://github.com/your-org/norikv"
+readme = "README.md"
+
+[dependencies]
+nori-observe = { path = "../nori-observe" }
