@@ -22,4 +22,3 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verify context pack exists
-        run: test -f context/00_index.yaml

@@ -1,5 +1,5 @@
 //! Raft core consensus with read-index and leases.
-//! Skeleton library: implement features guided by `context/`.
+//! Skeleton library - to be implemented.
 
 pub fn placeholder() -> &'static str {
     "nori-raft"

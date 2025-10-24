@@ -1,6 +1,6 @@
 //! WAL recovery with corruption detection and partial-tail truncation.
 //!
-//! Implements prefix-valid recovery strategy per context/30_storage.yaml:
+//! Implements prefix-valid recovery strategy:
 //! - Scans all segment files in order
 //! - Validates CRC32C for each record
 //! - Truncates partial/corrupt records at tail
