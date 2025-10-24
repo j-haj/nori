@@ -10,7 +10,7 @@ public_crates:
 semver:
   policy: "0.x experimental; 1.0 after ≥2 external adopters and stability"
 msrv: "1.75"
-license: "MIT OR Apache-2.0"
+license: "MIT"
 features_guidance:
   - "std default; allow no_std where feasible"
   - "tokio feature gates for async"
