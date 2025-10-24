@@ -22,6 +22,10 @@ pub enum RecordError {
     CrcMismatch { expected: u32, actual: u32 },
     #[error("Invalid compression type: {0}")]
     InvalidCompression(u8),
+    #[error("Compression failed: {0}")]
+    CompressionFailed(String),
+    #[error("Decompression failed: {0}")]
+    DecompressionFailed(String),
     #[error("Incomplete record")]
     Incomplete,
 }
@@ -111,9 +115,25 @@ impl Record {
     pub fn encode(&self) -> Bytes {
         let mut buf = BytesMut::new();
 
-        // Encode klen and vlen as varints
+        // Compress value if needed
+        let value_to_write = match self.compression {
+            Compression::None => self.value.clone(),
+            Compression::Lz4 => {
+                // Prepend original size for decompression
+                let compressed = lz4::block::compress(&self.value, None, false).unwrap_or_else(|_| self.value.to_vec());
+                let mut buf = BytesMut::new();
+                encode_varint(&mut buf, self.value.len() as u64);
+                buf.put_slice(&compressed);
+                buf.freeze()
+            }
+            Compression::Zstd => {
+                Bytes::from(zstd::encode_all(&self.value[..], 3).unwrap_or_else(|_| self.value.to_vec()))
+            }
+        };
+
+        // Encode klen and vlen as varints (vlen is compressed size)
         encode_varint(&mut buf, self.key.len() as u64);
-        encode_varint(&mut buf, self.value.len() as u64);
+        encode_varint(&mut buf, value_to_write.len() as u64);
 
         // Encode flags
         let mut flags = Flags::empty();
@@ -131,9 +151,9 @@ impl Record {
             encode_varint(&mut buf, ttl.as_millis() as u64);
         }
 
-        // Encode key and value
+        // Encode key and value (value is already compressed if needed)
         buf.put_slice(&self.key);
-        buf.put_slice(&self.value);
+        buf.put_slice(&value_to_write);
 
         // Calculate and append CRC32C
         let crc = crc32c::crc32c(&buf);
@@ -186,7 +206,7 @@ impl Record {
         let key = Bytes::copy_from_slice(&cursor[..klen as usize]);
         cursor.advance(klen as usize);
 
-        let value = Bytes::copy_from_slice(&cursor[..vlen as usize]);
+        let compressed_value = Bytes::copy_from_slice(&cursor[..vlen as usize]);
         cursor.advance(vlen as usize);
 
         // Verify CRC32C
@@ -207,6 +227,24 @@ impl Record {
                 actual: calculated_crc,
             });
         }
+
+        // Decompress value if needed
+        let value = match compression {
+            Compression::None => compressed_value,
+            Compression::Lz4 => {
+                // Extract original size and decompress
+                let mut cursor = &compressed_value[..];
+                let original_size = decode_varint(&mut cursor)? as usize;
+                let decompressed = lz4::block::decompress(cursor, Some(original_size as i32))
+                    .map_err(|e| RecordError::DecompressionFailed(e.to_string()))?;
+                Bytes::from(decompressed)
+            }
+            Compression::Zstd => {
+                let decompressed = zstd::decode_all(&compressed_value[..])
+                    .map_err(|e| RecordError::DecompressionFailed(e.to_string()))?;
+                Bytes::from(decompressed)
+            }
+        };
 
         let record = Record {
             key,
@@ -314,6 +352,71 @@ mod tests {
 
         assert_eq!(record, decoded);
         assert_eq!(decoded.ttl, Some(Duration::from_millis(5000)));
+    }
+
+    #[test]
+    fn test_record_with_lz4_compression() {
+        // Create a record with compressible data
+        let value = Bytes::from(b"hello world ".repeat(100)); // Highly compressible
+        let key = Bytes::from(&b"key"[..]);
+        let record = Record::put(key.clone(), value.clone())
+            .with_compression(Compression::Lz4);
+
+        let encoded = record.encode();
+        let (decoded, size) = Record::decode(&encoded).unwrap();
+
+        // Verify decompressed value matches original
+        assert_eq!(decoded.value, value);
+        assert_eq!(decoded.compression, Compression::Lz4);
+        assert_eq!(size, encoded.len());
+
+        // Verify compression actually reduced size
+        let uncompressed_record = Record::put(key, value);
+        let uncompressed_encoded = uncompressed_record.encode();
+        assert!(encoded.len() < uncompressed_encoded.len());
+    }
+
+    #[test]
+    fn test_record_with_zstd_compression() {
+        // Create a record with compressible data
+        let value = Bytes::from(b"the quick brown fox ".repeat(50));
+        let key = Bytes::from(&b"mykey"[..]);
+        let record = Record::put(key.clone(), value.clone())
+            .with_compression(Compression::Zstd);
+
+        let encoded = record.encode();
+        let (decoded, size) = Record::decode(&encoded).unwrap();
+
+        // Verify decompressed value matches original
+        assert_eq!(decoded.value, value);
+        assert_eq!(decoded.compression, Compression::Zstd);
+        assert_eq!(size, encoded.len());
+
+        // Verify compression actually reduced size
+        let uncompressed_record = Record::put(key, value);
+        let uncompressed_encoded = uncompressed_record.encode();
+        assert!(encoded.len() < uncompressed_encoded.len());
+    }
+
+    #[test]
+    fn test_compression_with_random_data() {
+        // Random data shouldn't compress well
+        let value: Vec<u8> = (0..100).map(|i| (i * 37 + 13) as u8).collect();
+        let key = Bytes::from(&b"key"[..]);
+
+        let lz4_record = Record::put(key.clone(), Bytes::from(value.clone()))
+            .with_compression(Compression::Lz4);
+        let lz4_encoded = lz4_record.encode();
+        let (lz4_decoded, _) = Record::decode(&lz4_encoded).unwrap();
+
+        assert_eq!(lz4_decoded.value.as_ref(), value.as_slice());
+
+        let zstd_record = Record::put(key, Bytes::from(value.clone()))
+            .with_compression(Compression::Zstd);
+        let zstd_encoded = zstd_record.encode();
+        let (zstd_decoded, _) = Record::decode(&zstd_encoded).unwrap();
+
+        assert_eq!(zstd_decoded.value.as_ref(), value.as_slice());
     }
 
     #[test]

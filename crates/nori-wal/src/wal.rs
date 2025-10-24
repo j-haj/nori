@@ -469,7 +469,7 @@ mod tests {
         wal.close().await.unwrap();
 
         // Reopen and verify all records are present
-        let (wal2, recovery_info) = Wal::open(config).await.unwrap();
+        let (_wal2, recovery_info) = Wal::open(config).await.unwrap();
         assert_eq!(recovery_info.valid_records, 5);
         assert!(!recovery_info.corruption_detected);
     }
