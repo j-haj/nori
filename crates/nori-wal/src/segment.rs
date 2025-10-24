@@ -1,10 +1,11 @@
 //! WAL segment file management with automatic rotation at 128MB.
 //!
 //! Segments are numbered sequentially (e.g., 000000.wal, 000001.wal) and rotated
-//! when they reach the configured size limit (default 128MB per context/30_storage.yaml).
+//! when they reach the configured size limit (default 128MB).
 
 use crate::record::Record;
 use nori_observe::{Meter, VizEvent, WalEvt, WalKind};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -47,7 +48,7 @@ pub enum FsyncPolicy {
 
 impl Default for FsyncPolicy {
     fn default() -> Self {
-        // Default to batch with 5ms window per context/30_storage.yaml
+        // Default to batch with 5ms window
         FsyncPolicy::Batch(Duration::from_millis(5))
     }
 }
@@ -149,6 +150,59 @@ impl SegmentFile {
     }
 }
 
+/// Simple LRU cache for segment file descriptors.
+struct FdCache {
+    cache: HashMap<u64, Arc<Mutex<File>>>,
+    max_size: usize,
+    access_order: Vec<u64>,
+}
+
+impl FdCache {
+    fn new(max_size: usize) -> Self {
+        Self {
+            cache: HashMap::new(),
+            max_size,
+            access_order: Vec::new(),
+        }
+    }
+
+    async fn get_or_open(&mut self, segment_id: u64, dir: &Path) -> Result<Arc<Mutex<File>>, SegmentError> {
+        // Check if already in cache
+        if let Some(file) = self.cache.get(&segment_id) {
+            // Update access order
+            self.access_order.retain(|&id| id != segment_id);
+            self.access_order.push(segment_id);
+            return Ok(file.clone());
+        }
+
+        // Open new file
+        let path = segment_path(dir, segment_id);
+        let file = File::open(&path).await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                SegmentError::NotFound(segment_id)
+            } else {
+                SegmentError::Io(e)
+            }
+        })?;
+
+        let file_arc = Arc::new(Mutex::new(file));
+
+        // Evict LRU if at capacity
+        if self.cache.len() >= self.max_size {
+            if let Some(&lru_id) = self.access_order.first() {
+                self.cache.remove(&lru_id);
+                self.access_order.remove(0);
+            }
+        }
+
+        // Insert into cache
+        self.cache.insert(segment_id, file_arc.clone());
+        self.access_order.push(segment_id);
+
+        Ok(file_arc)
+    }
+}
+
 /// Manages WAL segments with automatic rotation.
 pub struct SegmentManager {
     config: SegmentConfig,
@@ -157,6 +211,7 @@ pub struct SegmentManager {
     meter: Arc<dyn Meter>,
     node_id: u32,
     last_fsync: Arc<Mutex<Option<Instant>>>,
+    fd_cache: Arc<Mutex<FdCache>>,
 }
 
 impl SegmentManager {
@@ -182,6 +237,7 @@ impl SegmentManager {
             meter,
             node_id,
             last_fsync: Arc::new(Mutex::new(None)),
+            fd_cache: Arc::new(Mutex::new(FdCache::new(32))), // Cache up to 32 segment FDs
         })
     }
 
@@ -277,10 +333,13 @@ impl SegmentManager {
                 };
 
                 if should_sync {
-                    let start = Instant::now();
+                    // Update timestamp BEFORE fsync to prevent multiple concurrent fsyncs
+                    let fsync_start = Instant::now();
+                    *last_sync = Some(fsync_start);
+                    drop(last_sync); // Release lock before expensive fsync
+
                     current.sync().await?;
-                    let elapsed_ms = start.elapsed().as_millis() as u32;
-                    *last_sync = Some(Instant::now());
+                    let elapsed_ms = fsync_start.elapsed().as_millis() as u32;
 
                     self.meter.emit(VizEvent::Wal(WalEvt {
                         node: self.node_id,
@@ -350,17 +409,13 @@ impl SegmentManager {
 
     /// Reads records from a segment starting at the given position.
     pub async fn read_from(&self, position: Position) -> Result<SegmentReader, SegmentError> {
-        let path = segment_path(&self.config.dir, position.segment_id);
-        let file = File::open(&path).await.map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                SegmentError::NotFound(position.segment_id)
-            } else {
-                SegmentError::Io(e)
-            }
-        })?;
+        // Get file from cache (or open if not cached)
+        let mut cache = self.fd_cache.lock().await;
+        let file_arc = cache.get_or_open(position.segment_id, &self.config.dir).await?;
+        drop(cache); // Release cache lock
 
         Ok(SegmentReader {
-            reader: BufReader::new(file),
+            file: file_arc,
             position: position.offset,
             segment_id: position.segment_id,
         })
@@ -378,7 +433,7 @@ impl SegmentManager {
 
 /// Iterator for reading records from a segment.
 pub struct SegmentReader {
-    reader: BufReader<File>,
+    file: Arc<Mutex<File>>,
     position: u64,
     segment_id: u64,
 }
@@ -386,14 +441,14 @@ pub struct SegmentReader {
 impl SegmentReader {
     /// Reads the next record from the segment.
     pub async fn next_record(&mut self) -> Result<Option<(Record, Position)>, SegmentError> {
-        // Seek to the current position if needed
-        self.reader
-            .seek(std::io::SeekFrom::Start(self.position))
-            .await?;
+        let mut file = self.file.lock().await;
+
+        // Seek to the current position
+        file.seek(std::io::SeekFrom::Start(self.position)).await?;
 
         // Try to read some data
         let mut buffer = vec![0u8; 4096]; // Start with 4KB buffer
-        let n = self.reader.read(&mut buffer).await?;
+        let n = file.read(&mut buffer).await?;
 
         if n == 0 {
             return Ok(None); // EOF
@@ -414,7 +469,7 @@ impl SegmentReader {
             Err(crate::record::RecordError::Incomplete) if n == 4096 => {
                 // Need more data, read more
                 let mut more_data = vec![0u8; 4096];
-                let additional = self.reader.read(&mut more_data).await?;
+                let additional = file.read(&mut more_data).await?;
                 buffer.extend_from_slice(&more_data[..additional]);
 
                 match Record::decode(&buffer) {

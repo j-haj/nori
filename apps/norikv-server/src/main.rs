@@ -1,3 +1,3 @@
 fn main() {
-    println!("NoriKV server (skeleton). See context/ and crates for implementation.");
+    println!("NoriKV server (skeleton) - to be implemented.");
 }

@@ -1,3 +1,3 @@
 # NoriKV SDK (go)
 
-See `context/52_*` for design.
+To be implemented.

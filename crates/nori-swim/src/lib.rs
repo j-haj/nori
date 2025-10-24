@@ -1,5 +1,5 @@
 //! SWIM-like membership/failure detector.
-//! Skeleton library: implement features guided by `context/`.
+//! Skeleton library - to be implemented.
 
 pub fn placeholder() -> &'static str {
     "nori-swim"

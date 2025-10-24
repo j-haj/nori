@@ -48,7 +48,6 @@ Rust Edition: **2021**
 ## Architecture Overview
 
 ### Context Pack (Source of Truth)
-The `context/` directory contains YAML specifications that define the entire system design, APIs, and contracts. **Always consult these files before making architectural decisions:**
 
 - **`00_index.yaml`** - Start here; guides you through the context pack structure
 - **`10_product.yaml`** - Goals, SLOs, limits
@@ -132,7 +131,6 @@ The `context/` directory contains YAML specifications that define the entire sys
 ### Code Organization
 - Favor small, testable crates
 - Keep traits stable; extend via adapters
-- Design docs in `context/` must stay in sync with code changes
 
 ## Testing Strategy
 
@@ -152,7 +150,6 @@ The `context/` directory contains YAML specifications that define the entire sys
 
 ## SDK Development
 
-When working on SDKs, consult the relevant `context/50-53_sdk_*.yaml` files for:
 - Language-specific API patterns
 - Test vectors for key→shard mapping (must match across all SDKs)
 - Error handling conventions
@@ -160,4 +157,3 @@ When working on SDKs, consult the relevant `context/50-53_sdk_*.yaml` files for:
 
 ## Skeleton Status
 
-This is currently a **skeleton workspace**. Core crates include minimal stubs so the workspace builds while features are implemented. The `context/` pack defines the complete specification to guide implementation.

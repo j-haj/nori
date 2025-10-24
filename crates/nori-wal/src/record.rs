@@ -1,6 +1,6 @@
 //! WAL record format with varint encoding and CRC32C checksumming.
 //!
-//! Format per context/30_storage.yaml:
+//! Record format:
 //! - klen: varint
 //! - vlen: varint
 //! - flags: u8 (bits: 0=tombstone, 1=ttl_present, 2-3=compression, 4-7=reserved)
