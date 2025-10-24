@@ -174,23 +174,23 @@ assert!(record.tombstone);
 ## Architecture
 
 ```
-┌─────────────────────────────────────────┐
+┌──────────────────────────────────────────┐
 │  Wal API                                 │
 │  - open / append / sync / read           │
-├─────────────────────────────────────────┤
+├──────────────────────────────────────────┤
 │  SegmentManager                          │
 │  - Rotation at 128MB                     │
 │  - Fsync policy enforcement              │
-├─────────────────────────────────────────┤
+├──────────────────────────────────────────┤
 │  Recovery                                │
 │  - CRC validation                        │
 │  - Prefix-valid truncation               │
-├─────────────────────────────────────────┤
+├──────────────────────────────────────────┤
 │  Record Format                           │
 │  - Varint encoding (klen, vlen)          │
 │  - Flags (tombstone, TTL, compression)   │
 │  - CRC32C checksum                       │
-└─────────────────────────────────────────┘
+└──────────────────────────────────────────┘
 ```
 
 Segments are stored as sequential files:
