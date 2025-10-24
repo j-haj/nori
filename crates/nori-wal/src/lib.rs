@@ -8,9 +8,11 @@
 //! - Observability via nori-observe
 
 pub mod record;
+pub mod recovery;
 pub mod segment;
 
 pub use record::{Compression, Record, RecordError};
+pub use recovery::RecoveryInfo;
 pub use segment::{
     FsyncPolicy, Position, SegmentConfig, SegmentError, SegmentManager, SegmentReader,
 };
