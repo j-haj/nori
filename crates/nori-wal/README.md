@@ -203,7 +203,29 @@ wal/
 
 ## Performance
 
-Benchmarks run on Apple M2 Pro (10 cores, 16GB RAM) using [Criterion](https://github.com/bheisler/criterion.rs).
+**TL;DR - What performance can you expect?**
+
+**Good fit for these scenarios:**
+
+- **High-throughput event logging**: 110K writes/sec (1KB records) with OS fsync
+- **Web application state**: 86K writes/sec with 5ms durability guarantee (Batch fsync)
+- **Message queues & event streams**: 102 MiB/s when batching 1000+ messages
+- **Fast crash recovery**: 50MB WAL recovers in 15ms, multi-GB in under 1 second
+- **Sequential replay**: 52 MiB/s scan throughput for rebuilding state
+
+**Not ideal for these scenarios:**
+
+- **Ultra-low latency systems**: ~9µs per write may be too slow (consider lockless queues)
+- **Strict synchronous writes**: Always fsync drops to ~420 writes/sec (disk-bound)
+- **Random read access**: No indexing, only sequential scans (use LSM or B-tree on top)
+- **Extremely high concurrency**: 8+ concurrent writers see lock contention (~15 MiB/s)
+- **Very large records (>10KB)**: Throughput drops to ~44K writes/sec with batching
+
+**Recommendation:** Use Batch (5ms) fsync policy for most applications—it provides 80% of OS performance with good durability guarantees.
+
+---
+
+*Benchmarks run on Apple M2 Pro (10 cores, 16GB RAM) using [Criterion](https://github.com/bheisler/criterion.rs).*
 
 ### Write Performance
 
@@ -220,8 +242,6 @@ Benchmarks run on Apple M2 Pro (10 cores, 16GB RAM) using [Criterion](https://gi
 - Batch fsync: 9-434 MiB/s (5ms batching window)
 - Always fsync: 74 KiB/s - 3.2 MiB/s (syncs after every write)
 
-**Plain English:** With the OS fsync policy (best performance), you can sustain **~110,000 writes/second** for typical 1KB records on this hardware. The Always fsync policy drops to ~420 writes/sec due to disk sync overhead, while Batch fsync provides a good middle ground at ~86,000 writes/sec.
-
 **Batch writes** (appending multiple records then syncing once):
 
 | Batch Size | Throughput | Time |
@@ -229,8 +249,6 @@ Benchmarks run on Apple M2 Pro (10 cores, 16GB RAM) using [Criterion](https://gi
 | 10 records | ~2.8 MiB/s | ~3.5ms |
 | 100 records | ~22.5 MiB/s | ~4.3ms |
 | 1000 records | ~102 MiB/s | ~9.5ms |
-
-**Plain English:** Batching writes dramatically improves throughput. Writing 1000 records in a batch and syncing once achieves **102 MiB/s**, compared to ~11 MiB/s for individual writes. If your application can buffer writes, batching provides 10x better throughput.
 
 ### Concurrent Write Performance
 
@@ -243,8 +261,6 @@ Multiple async tasks writing concurrently (100 writes per task, 1KB records, OS 
 | 4       | ~14.7 MiB/s | ~26.7ms |
 | 8       | ~17.5 MiB/s | ~44.6ms |
 
-**Plain English:** The WAL handles concurrent writers gracefully, maintaining ~18-20 MiB/s throughput with 1-2 concurrent tasks. Performance slightly degrades with 4-8 concurrent writers due to lock contention, but still provides reasonable throughput.
-
 ### Read Performance
 
 Sequential scan throughput (reading all records from the beginning):
@@ -254,8 +270,6 @@ Sequential scan throughput (reading all records from the beginning):
 | 100 (100 KB) | ~1.9ms | ~52 MiB/s |
 | 1,000 (1 MB) | ~18.6ms | ~52 MiB/s |
 | 10,000 (10 MB) | ~182ms | ~54 MiB/s |
-
-**Plain English:** Sequential reads are fast and consistent at **~52 MiB/s**. Reading 10,000 records (10 MB) takes under 200ms. Reads scale linearly with data size.
 
 ### Recovery Performance
 
@@ -270,18 +284,6 @@ Time to recover and validate records on WAL restart (simulates crash recovery):
 **Multi-segment recovery** (spanning multiple 1MB segments):
 - 2 segments (5,000 records): ~1.3ms (~3.6 GiB/s)
 - 5 segments (5,000 records): ~1.5ms (~3.2 GiB/s)
-
-**Plain English:** Recovery is extremely fast. A WAL with 50,000 records (50 MB) recovers in **under 15 milliseconds**. This is because recovery only validates CRC checksums without deserializing values. Even with multiple segments, recovery throughput exceeds 3 GiB/s.
-
-### Real-World Interpretation
-
-For a typical web application storing 1KB records:
-- **High throughput mode** (OS fsync): ~110,000 writes/sec, ~52 MiB/s reads
-- **Balanced mode** (Batch 5ms fsync): ~86,000 writes/sec with durability guarantees
-- **Maximum durability** (Always fsync): ~420 writes/sec, every write survives crashes
-- **Crash recovery**: 50MB WAL recovers in ~15ms (sub-second even for GBs)
-
-The OS fsync policy provides excellent throughput for high-write workloads where you can tolerate losing recent writes in a crash. The Batch policy offers a good compromise, ensuring data is synced to disk within 5ms while maintaining 80% of OS performance.
 
 ## Observability Events
 
