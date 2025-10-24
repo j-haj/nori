@@ -87,7 +87,7 @@ impl SegmentFile {
     async fn open(dir: &Path, id: u64, create: bool) -> Result<Self, SegmentError> {
         let path = segment_path(dir, id);
 
-        let file = if create {
+        let mut file = if create {
             OpenOptions::new()
                 .create(true)
                 .truncate(false) // Don't truncate - append to existing segments
@@ -105,6 +105,12 @@ impl SegmentFile {
 
         let metadata = file.metadata().await?;
         let size = metadata.len();
+
+        // Seek to end if file exists (size > 0)
+        if size > 0 {
+            use tokio::io::AsyncSeekExt;
+            file.seek(std::io::SeekFrom::End(0)).await?;
+        }
 
         Ok(Self {
             id,

@@ -187,6 +187,7 @@ mod tests {
     use crate::segment::{SegmentConfig, SegmentManager};
     use nori_observe::NoopMeter;
     use tempfile::TempDir;
+    use tokio::io::AsyncWriteExt;
 
     #[tokio::test]
     async fn test_recovery_clean_segments() {
@@ -290,7 +291,6 @@ mod tests {
         // Read the file and corrupt the last record's data (not CRC)
         let seg_path = temp_dir.path().join("000000.wal");
         let mut file_data = tokio::fs::read(&seg_path).await.unwrap();
-        let original_len = file_data.len();
 
         // Flip some bits in the last 20 bytes (likely in the last record's value)
         if file_data.len() > 20 {
