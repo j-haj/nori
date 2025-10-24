@@ -147,6 +147,18 @@ impl Wal {
         self.manager.append(record).await
     }
 
+    /// Appends a batch of records to the WAL.
+    ///
+    /// This is more efficient than calling `append()` repeatedly because:
+    /// - Lock is acquired only once for all records
+    /// - Fsync (if policy is Always) happens once for the entire batch
+    /// - Records are written sequentially without interleaving from other writers
+    ///
+    /// Returns a vector of positions where each record was written.
+    pub async fn append_batch(&self, records: &[Record]) -> Result<Vec<Position>, SegmentError> {
+        self.manager.append_batch(records).await
+    }
+
     /// Flushes buffered data to the OS (but doesn't fsync).
     pub async fn flush(&self) -> Result<(), SegmentError> {
         self.manager.flush().await
@@ -460,5 +472,41 @@ mod tests {
         let (wal2, recovery_info) = Wal::open(config).await.unwrap();
         assert_eq!(recovery_info.valid_records, 5);
         assert!(!recovery_info.corruption_detected);
+    }
+
+    #[tokio::test]
+    async fn test_wal_batch_append() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = WalConfig {
+            dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let (wal, _) = Wal::open(config.clone()).await.unwrap();
+
+        // Create a batch of records
+        let records: Vec<Record> = (0..100)
+            .map(|i| {
+                let key = format!("key{}", i);
+                Record::put(bytes::Bytes::from(key), b"value".as_slice())
+            })
+            .collect();
+
+        // Batch append
+        let positions = wal.append_batch(&records).await.unwrap();
+
+        assert_eq!(positions.len(), 100);
+
+        // Verify positions are sequential
+        for i in 1..positions.len() {
+            assert!(positions[i].offset > positions[i - 1].offset);
+        }
+
+        wal.sync().await.unwrap();
+
+        // Reopen and verify all records
+        drop(wal);
+        let (_wal2, recovery_info) = Wal::open(config).await.unwrap();
+        assert_eq!(recovery_info.valid_records, 100);
     }
 }
