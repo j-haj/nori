@@ -13,3 +13,4 @@ apps/norikv-dashboard/.turbo
 .DS_Store
 .idea
 .vscode
+context/
