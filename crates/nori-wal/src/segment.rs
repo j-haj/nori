@@ -7,10 +7,12 @@ use crate::record::Record;
 use nori_observe::{Meter, VizEvent, WalEvt, WalKind};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
 use tokio::sync::Mutex;
+use tokio::time::Instant;
 
 const DEFAULT_SEGMENT_SIZE: u64 = 134_217_728; // 128 MiB
 
@@ -31,6 +33,25 @@ pub struct Position {
     pub offset: u64,
 }
 
+/// Fsync policy for durability vs performance tradeoff.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FsyncPolicy {
+    /// Always fsync after every write (maximum durability, lowest performance).
+    Always,
+    /// Batch fsyncs within a time window (balanced durability and performance).
+    /// Fsyncs will happen at most once per the specified duration.
+    Batch(Duration),
+    /// Let the OS handle fsyncing (best performance, least durability).
+    Os,
+}
+
+impl Default for FsyncPolicy {
+    fn default() -> Self {
+        // Default to batch with 5ms window per context/30_storage.yaml
+        FsyncPolicy::Batch(Duration::from_millis(5))
+    }
+}
+
 /// Configuration for segment behavior.
 #[derive(Debug, Clone)]
 pub struct SegmentConfig {
@@ -38,6 +59,8 @@ pub struct SegmentConfig {
     pub max_segment_size: u64,
     /// Directory to store segment files.
     pub dir: PathBuf,
+    /// Fsync policy for durability.
+    pub fsync_policy: FsyncPolicy,
 }
 
 impl Default for SegmentConfig {
@@ -45,6 +68,7 @@ impl Default for SegmentConfig {
         Self {
             max_segment_size: DEFAULT_SEGMENT_SIZE,
             dir: PathBuf::from("wal"),
+            fsync_policy: FsyncPolicy::default(),
         }
     }
 }
@@ -126,6 +150,7 @@ pub struct SegmentManager {
     current_id: Arc<Mutex<u64>>,
     meter: Arc<dyn Meter>,
     node_id: u32,
+    last_fsync: Arc<Mutex<Option<Instant>>>,
 }
 
 impl SegmentManager {
@@ -150,10 +175,12 @@ impl SegmentManager {
             current_id: Arc::new(Mutex::new(latest_id)),
             meter,
             node_id,
+            last_fsync: Arc::new(Mutex::new(None)),
         })
     }
 
     /// Appends a record to the WAL, rotating if necessary.
+    /// Applies the configured fsync policy.
     pub async fn append(&self, record: &Record) -> Result<Position, SegmentError> {
         let encoded_size = record.encode().len();
 
@@ -168,6 +195,46 @@ impl SegmentManager {
 
         let offset = current.append(record).await?;
         let segment_id = current.id;
+
+        // Apply fsync policy
+        match self.config.fsync_policy {
+            FsyncPolicy::Always => {
+                // Always fsync immediately after write
+                let start = Instant::now();
+                current.sync().await?;
+                let elapsed_ms = start.elapsed().as_millis() as u32;
+
+                self.meter.emit(VizEvent::Wal(WalEvt {
+                    node: self.node_id,
+                    seg: current.id,
+                    kind: WalKind::Fsync { ms: elapsed_ms },
+                }));
+            }
+            FsyncPolicy::Batch(window) => {
+                // Check if we need to fsync based on time window
+                let mut last_sync = self.last_fsync.lock().await;
+                let should_sync = match *last_sync {
+                    None => true,
+                    Some(last) => last.elapsed() >= window,
+                };
+
+                if should_sync {
+                    let start = Instant::now();
+                    current.sync().await?;
+                    let elapsed_ms = start.elapsed().as_millis() as u32;
+                    *last_sync = Some(Instant::now());
+
+                    self.meter.emit(VizEvent::Wal(WalEvt {
+                        node: self.node_id,
+                        seg: current.id,
+                        kind: WalKind::Fsync { ms: elapsed_ms },
+                    }));
+                }
+            }
+            FsyncPolicy::Os => {
+                // No fsync - let OS handle it
+            }
+        }
 
         Ok(Position { segment_id, offset })
     }
@@ -353,6 +420,7 @@ mod tests {
         let config = SegmentConfig {
             max_segment_size: DEFAULT_SEGMENT_SIZE,
             dir: temp_dir.path().to_path_buf(),
+            fsync_policy: FsyncPolicy::Os, // Fast for tests
         };
 
         let manager = SegmentManager::new(config, Arc::new(NoopMeter), 1)
@@ -372,6 +440,7 @@ mod tests {
         let config = SegmentConfig {
             max_segment_size: 100, // Small size to trigger rotation
             dir: temp_dir.path().to_path_buf(),
+            fsync_policy: FsyncPolicy::Os,
         };
 
         let manager = SegmentManager::new(config, Arc::new(NoopMeter), 1)
@@ -403,6 +472,7 @@ mod tests {
         let config = SegmentConfig {
             max_segment_size: DEFAULT_SEGMENT_SIZE,
             dir: temp_dir.path().to_path_buf(),
+            fsync_policy: FsyncPolicy::Os,
         };
 
         let manager = SegmentManager::new(config, Arc::new(NoopMeter), 1)
@@ -449,6 +519,7 @@ mod tests {
         let config = SegmentConfig {
             max_segment_size: DEFAULT_SEGMENT_SIZE,
             dir: temp_dir.path().to_path_buf(),
+            fsync_policy: FsyncPolicy::Os,
         };
 
         let manager = Arc::new(
@@ -493,5 +564,119 @@ mod tests {
             let count = handle.await.unwrap();
             assert_eq!(count, 10);
         }
+    }
+
+    #[tokio::test]
+    async fn test_fsync_policy_always() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = SegmentConfig {
+            max_segment_size: DEFAULT_SEGMENT_SIZE,
+            dir: temp_dir.path().to_path_buf(),
+            fsync_policy: FsyncPolicy::Always,
+        };
+
+        let manager = SegmentManager::new(config, Arc::new(NoopMeter), 1)
+            .await
+            .unwrap();
+
+        // With Always policy, each append should fsync
+        let record = Record::put(b"key".as_slice(), b"value".as_slice());
+        manager.append(&record).await.unwrap();
+        manager.append(&record).await.unwrap();
+
+        // Verify data is persisted (implicit by successful append with Always policy)
+        let mut reader = manager
+            .read_from(Position {
+                segment_id: 0,
+                offset: 0,
+            })
+            .await
+            .unwrap();
+
+        let mut count = 0;
+        while reader.next_record().await.unwrap().is_some() {
+            count += 1;
+        }
+        assert_eq!(count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_fsync_policy_batch() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = SegmentConfig {
+            max_segment_size: DEFAULT_SEGMENT_SIZE,
+            dir: temp_dir.path().to_path_buf(),
+            fsync_policy: FsyncPolicy::Batch(Duration::from_millis(10)),
+        };
+
+        let manager = SegmentManager::new(config, Arc::new(NoopMeter), 1)
+            .await
+            .unwrap();
+
+        let record = Record::put(b"key".as_slice(), b"value".as_slice());
+
+        // First append should fsync
+        manager.append(&record).await.unwrap();
+
+        // Immediate second append should not fsync (within window)
+        manager.append(&record).await.unwrap();
+
+        // Wait for window to pass
+        tokio::time::sleep(Duration::from_millis(15)).await;
+
+        // This append should fsync again
+        manager.append(&record).await.unwrap();
+
+        // Verify all records persisted
+        manager.sync().await.unwrap();
+        let mut reader = manager
+            .read_from(Position {
+                segment_id: 0,
+                offset: 0,
+            })
+            .await
+            .unwrap();
+
+        let mut count = 0;
+        while reader.next_record().await.unwrap().is_some() {
+            count += 1;
+        }
+        assert_eq!(count, 3);
+    }
+
+    #[tokio::test]
+    async fn test_fsync_policy_os() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = SegmentConfig {
+            max_segment_size: DEFAULT_SEGMENT_SIZE,
+            dir: temp_dir.path().to_path_buf(),
+            fsync_policy: FsyncPolicy::Os,
+        };
+
+        let manager = SegmentManager::new(config, Arc::new(NoopMeter), 1)
+            .await
+            .unwrap();
+
+        // With OS policy, appends don't fsync automatically
+        let record = Record::put(b"key".as_slice(), b"value".as_slice());
+        manager.append(&record).await.unwrap();
+        manager.append(&record).await.unwrap();
+
+        // Manual sync to ensure persistence for test verification
+        manager.sync().await.unwrap();
+
+        let mut reader = manager
+            .read_from(Position {
+                segment_id: 0,
+                offset: 0,
+            })
+            .await
+            .unwrap();
+
+        let mut count = 0;
+        while reader.next_record().await.unwrap().is_some() {
+            count += 1;
+        }
+        assert_eq!(count, 2);
     }
 }
