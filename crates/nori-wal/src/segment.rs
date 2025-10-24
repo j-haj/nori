@@ -403,6 +403,84 @@ impl SegmentManager {
         Ok(Position { segment_id, offset })
     }
 
+    /// Appends a batch of records to the WAL.
+    ///
+    /// More efficient than individual appends because:
+    /// - Lock held only once for entire batch
+    /// - Single fsync for entire batch (if policy is Always)
+    /// - No interleaving with other writers
+    pub async fn append_batch(&self, records: &[Record]) -> Result<Vec<Position>, SegmentError> {
+        if records.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Calculate total size needed
+        let total_size: usize = records.iter().map(|r| r.encode().len()).sum();
+
+        let mut current = self.current.lock().await;
+        let mut positions = Vec::with_capacity(records.len());
+
+        // Check if we need to rotate before starting batch
+        if current.would_exceed(total_size, self.config.max_segment_size) {
+            drop(current);
+            self.rotate().await?;
+            current = self.current.lock().await;
+        }
+
+        // Append all records
+        for record in records {
+            let offset = current.append(record).await?;
+            positions.push(Position {
+                segment_id: current.id,
+                offset,
+            });
+        }
+
+        let segment_id = current.id;
+
+        // Apply fsync policy once for entire batch
+        match self.config.fsync_policy {
+            FsyncPolicy::Always => {
+                let start = Instant::now();
+                current.sync().await?;
+                let elapsed_ms = start.elapsed().as_millis() as u32;
+
+                self.meter.emit(VizEvent::Wal(WalEvt {
+                    node: self.node_id,
+                    seg: segment_id,
+                    kind: WalKind::Fsync { ms: elapsed_ms },
+                }));
+            }
+            FsyncPolicy::Batch(window) => {
+                let mut last_sync = self.last_fsync.lock().await;
+                let should_sync = match *last_sync {
+                    None => true,
+                    Some(last) => last.elapsed() >= window,
+                };
+
+                if should_sync {
+                    let fsync_start = Instant::now();
+                    *last_sync = Some(fsync_start);
+                    drop(last_sync);
+
+                    current.sync().await?;
+                    let elapsed_ms = fsync_start.elapsed().as_millis() as u32;
+
+                    self.meter.emit(VizEvent::Wal(WalEvt {
+                        node: self.node_id,
+                        seg: segment_id,
+                        kind: WalKind::Fsync { ms: elapsed_ms },
+                    }));
+                }
+            }
+            FsyncPolicy::Os => {
+                // No fsync - let OS handle it
+            }
+        }
+
+        Ok(positions)
+    }
+
     /// Flushes the current segment to disk.
     pub async fn flush(&self) -> Result<(), SegmentError> {
         let mut current = self.current.lock().await;
@@ -499,13 +577,15 @@ pub struct SegmentReader {
 impl SegmentReader {
     /// Reads the next record from the segment.
     pub async fn next_record(&mut self) -> Result<Option<(Record, Position)>, SegmentError> {
+        const READ_BUFFER_SIZE: usize = 65536; // 64KB buffer for better performance
+
         let mut file = self.file.lock().await;
 
         // Seek to the current position
         file.seek(std::io::SeekFrom::Start(self.position)).await?;
 
         // Try to read some data
-        let mut buffer = vec![0u8; 4096]; // Start with 4KB buffer
+        let mut buffer = vec![0u8; READ_BUFFER_SIZE];
         let n = file.read(&mut buffer).await?;
 
         if n == 0 {
@@ -524,9 +604,9 @@ impl SegmentReader {
                 self.position += size as u64;
                 Ok(Some((record, pos)))
             }
-            Err(crate::record::RecordError::Incomplete) if n == 4096 => {
+            Err(crate::record::RecordError::Incomplete) if n == READ_BUFFER_SIZE => {
                 // Need more data, read more
-                let mut more_data = vec![0u8; 4096];
+                let mut more_data = vec![0u8; READ_BUFFER_SIZE];
                 let additional = file.read(&mut more_data).await?;
                 buffer.extend_from_slice(&more_data[..additional]);
 
