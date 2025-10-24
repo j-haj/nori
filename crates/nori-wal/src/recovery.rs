@@ -12,7 +12,7 @@ use nori_observe::{Meter, VizEvent, WalEvt, WalKind};
 use std::path::Path;
 use std::sync::Arc;
 use tokio::fs::{File, OpenOptions};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// Result of WAL recovery.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,12 +121,25 @@ async fn recover_segment(
 
     let bytes_truncated = file_size - last_valid_offset;
 
-    // If we need to truncate, rewrite the file
+    // If we need to truncate, use atomic temp file + rename pattern
     if bytes_truncated > 0 {
-        let truncate_file = OpenOptions::new().write(true).open(&path).await?;
+        let temp_path = path.with_extension("wal.tmp");
 
-        truncate_file.set_len(last_valid_offset).await?;
-        truncate_file.sync_all().await?;
+        // Write valid data to temp file
+        let mut temp_file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&temp_path)
+            .await?;
+
+        temp_file.write_all(&buffer[..last_valid_offset as usize]).await?;
+        temp_file.sync_all().await?;
+        drop(temp_file);
+
+        // Atomic rename: if this succeeds, the old file is replaced atomically
+        // If we crash before this, the original file is unchanged
+        tokio::fs::rename(&temp_path, &path).await?;
 
         // Emit corruption event
         meter.emit(VizEvent::Wal(WalEvt {

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
@@ -25,6 +25,8 @@ pub enum SegmentError {
     Record(#[from] crate::record::RecordError),
     #[error("Segment not found: {0}")]
     NotFound(u64),
+    #[error("Invalid configuration: {0}")]
+    InvalidConfig(String),
 }
 
 /// Position in the WAL (segment ID + byte offset).
@@ -85,7 +87,10 @@ struct SegmentFile {
 
 impl SegmentFile {
     /// Opens an existing segment or creates a new one.
-    async fn open(dir: &Path, id: u64, create: bool) -> Result<Self, SegmentError> {
+    ///
+    /// If `preallocate_size` is Some and this is a new file, it will be pre-allocated
+    /// to the given size to prevent "no space left" errors and improve filesystem locality.
+    async fn open(dir: &Path, id: u64, create: bool, preallocate_size: Option<u64>) -> Result<Self, SegmentError> {
         let path = segment_path(dir, id);
 
         let mut file = if create {
@@ -105,18 +110,30 @@ impl SegmentFile {
         };
 
         let metadata = file.metadata().await?;
-        let size = metadata.len();
+        let actual_data_size = metadata.len();
 
-        // Seek to end if file exists (size > 0)
-        if size > 0 {
-            use tokio::io::AsyncSeekExt;
-            file.seek(std::io::SeekFrom::End(0)).await?;
-        }
+        // Pre-allocate space for new files (but track actual data written separately)
+        let logical_size = if actual_data_size == 0 && create {
+            if let Some(target_size) = preallocate_size {
+                // Use set_len to pre-allocate disk space
+                file.set_len(target_size).await?;
+                file.sync_all().await?;
+                // Seek back to beginning since we'll be writing from offset 0
+                file.seek(std::io::SeekFrom::Start(0)).await?;
+            }
+            0 // Logical size is still 0, we've just reserved space
+        } else {
+            // Existing file: seek to end and use actual size
+            if actual_data_size > 0 {
+                file.seek(std::io::SeekFrom::End(0)).await?;
+            }
+            actual_data_size
+        };
 
         Ok(Self {
             id,
             file,
-            size,
+            size: logical_size,
             path,
         })
     }
@@ -146,6 +163,14 @@ impl SegmentFile {
     /// Syncs data to disk (fsync).
     async fn sync(&mut self) -> Result<(), SegmentError> {
         self.file.sync_data().await?;
+        Ok(())
+    }
+
+    /// Finalizes the segment by truncating it to actual written size.
+    /// This is important when pre-allocation is used.
+    async fn finalize(&mut self) -> Result<(), SegmentError> {
+        self.file.set_len(self.size).await?;
+        self.file.sync_all().await?;
         Ok(())
     }
 }
@@ -214,6 +239,27 @@ pub struct SegmentManager {
     fd_cache: Arc<Mutex<FdCache>>,
 }
 
+impl Drop for SegmentManager {
+    fn drop(&mut self) {
+        // Best-effort finalization on drop
+        // We can't do async work here, so we use blocking operations
+        if let Ok(current) = self.current.try_lock() {
+            // Use std::fs to do synchronous truncation
+            if let Ok(metadata) = std::fs::metadata(&current.path) {
+                if metadata.len() != current.size {
+                    let _ = std::fs::OpenOptions::new()
+                        .write(true)
+                        .open(&current.path)
+                        .and_then(|f| {
+                            f.set_len(current.size)?;
+                            f.sync_all()
+                        });
+                }
+            }
+        }
+    }
+}
+
 impl SegmentManager {
     /// Creates a new segment manager.
     pub async fn new(
@@ -228,7 +274,8 @@ impl SegmentManager {
         let latest_id = find_latest_segment_id(&config.dir).await?;
 
         // Open or create the current segment
-        let segment = SegmentFile::open(&config.dir, latest_id, true).await?;
+        // TODO: Enable pre-allocation once we have platform-specific fallocate support
+        let segment = SegmentFile::open(&config.dir, latest_id, true, None).await?;
 
         Ok(Self {
             config,
@@ -384,10 +431,13 @@ impl SegmentManager {
         let mut current_id = self.current_id.lock().await;
         let new_id = *current_id + 1;
 
-        // Emit rotation event with old segment size
-        let old_segment = self.current.lock().await;
+        // Finalize and get metadata from old segment
+        let mut old_segment = self.current.lock().await;
         let old_size = old_segment.size;
         let old_id = old_segment.id;
+
+        // Truncate old segment to actual written size (important for pre-allocated files)
+        old_segment.finalize().await?;
         drop(old_segment);
 
         self.meter.emit(VizEvent::Wal(WalEvt {
@@ -397,7 +447,8 @@ impl SegmentManager {
         }));
 
         // Create new segment
-        let new_segment = SegmentFile::open(&self.config.dir, new_id, true).await?;
+        // TODO: Enable pre-allocation once we have platform-specific fallocate support
+        let new_segment = SegmentFile::open(&self.config.dir, new_id, true, None).await?;
 
         // Swap in the new segment
         let mut current = self.current.lock().await;
@@ -428,6 +479,13 @@ impl SegmentManager {
             segment_id: current.id,
             offset: current.size,
         }
+    }
+
+    /// Finalizes the current segment by truncating to actual written size.
+    /// Should be called before closing the WAL.
+    pub async fn finalize_current(&self) -> Result<(), SegmentError> {
+        let mut current = self.current.lock().await;
+        current.finalize().await
     }
 }
 

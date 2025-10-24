@@ -35,6 +35,41 @@ impl Default for WalConfig {
     }
 }
 
+impl WalConfig {
+    /// Validates the configuration, returning an error if invalid.
+    fn validate(&self) -> Result<(), SegmentError> {
+        // Validate max_segment_size
+        if self.max_segment_size == 0 {
+            return Err(SegmentError::InvalidConfig(
+                "max_segment_size must be greater than 0".to_string(),
+            ));
+        }
+
+        // Warn if segment size is too small (less than 1MB)
+        if self.max_segment_size < 1024 * 1024 {
+            return Err(SegmentError::InvalidConfig(
+                "max_segment_size should be at least 1MB for reasonable performance".to_string(),
+            ));
+        }
+
+        // Validate fsync_policy batch window is reasonable
+        if let FsyncPolicy::Batch(duration) = self.fsync_policy {
+            if duration > Duration::from_secs(1) {
+                return Err(SegmentError::InvalidConfig(
+                    "fsync batch window should be less than 1 second to avoid excessive data loss risk".to_string(),
+                ));
+            }
+            if duration.is_zero() {
+                return Err(SegmentError::InvalidConfig(
+                    "fsync batch window cannot be zero - use FsyncPolicy::Always instead".to_string(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Write-Ahead Log with automatic recovery and rotation.
 ///
 /// # Example
@@ -76,6 +111,9 @@ impl Wal {
         config: WalConfig,
         meter: Arc<dyn Meter>,
     ) -> Result<(Self, RecoveryInfo), SegmentError> {
+        // Validate configuration
+        config.validate()?;
+
         // Create directory if it doesn't exist
         tokio::fs::create_dir_all(&config.dir).await?;
 
@@ -342,5 +380,42 @@ mod tests {
 
         let (rec2, _) = reader.next_record().await.unwrap().unwrap();
         assert!(rec2.tombstone);
+    }
+
+    #[tokio::test]
+    async fn test_wal_invalid_config() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Test with zero segment size
+        let config = WalConfig {
+            dir: temp_dir.path().to_path_buf(),
+            max_segment_size: 0,
+            ..Default::default()
+        };
+        assert!(Wal::open(config).await.is_err());
+
+        // Test with too small segment size
+        let config = WalConfig {
+            dir: temp_dir.path().to_path_buf(),
+            max_segment_size: 512, // Less than 1MB
+            ..Default::default()
+        };
+        assert!(Wal::open(config).await.is_err());
+
+        // Test with excessive batch fsync window
+        let config = WalConfig {
+            dir: temp_dir.path().to_path_buf(),
+            fsync_policy: FsyncPolicy::Batch(Duration::from_secs(2)),
+            ..Default::default()
+        };
+        assert!(Wal::open(config).await.is_err());
+
+        // Test with zero batch fsync window
+        let config = WalConfig {
+            dir: temp_dir.path().to_path_buf(),
+            fsync_policy: FsyncPolicy::Batch(Duration::ZERO),
+            ..Default::default()
+        };
+        assert!(Wal::open(config).await.is_err());
     }
 }
