@@ -8,5 +8,7 @@
 //! - Observability via nori-observe
 
 pub mod record;
+pub mod segment;
 
 pub use record::{Compression, Record, RecordError};
+pub use segment::{Position, SegmentConfig, SegmentError, SegmentManager, SegmentReader};
