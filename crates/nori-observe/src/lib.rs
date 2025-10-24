@@ -2,8 +2,6 @@
 //!
 //! Core crates depend only on these traits and event types. Backends live elsewhere.
 
-use std::time::Instant;
-
 pub trait Counter: Send + Sync { fn inc(&self, v: u64); }
 pub trait Gauge:   Send + Sync { fn set(&self, v: i64); }
 pub trait Histogram: Send + Sync { fn observe(&self, v: f64); }
