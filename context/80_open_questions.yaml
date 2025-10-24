@@ -1,0 +1,9 @@
+context_version: 1
+module: design_open_questions
+items:
+  - "Default read consistency for SDKs: lease vs linearizable?"
+  - "Server-side chunking for >1 MiB values or SDK-only?"
+  - "Cross-DC replication requirements & conflict policy?"
+  - "Prefix scans/range queries in v1?"
+  - "Minimum production security posture (mTLS, RBAC) baseline?"
+  - "Publish norikv-placement when weights/heterogeneity spec stabilizes?"

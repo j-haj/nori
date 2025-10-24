@@ -1,0 +1,30 @@
+context_version: 1
+module: ops
+config_schema_yaml: |
+  data_dir: /var/lib/norikv
+  rpc:
+    listen: 0.0.0.0:7447
+    tls: disabled
+  cluster:
+    cluster_id: dev
+    seed_nodes: ["10.0.0.1:7447","10.0.0.2:7447","10.0.0.3:7447"]
+    replication_factor: 3
+    total_shards: 1024
+  telemetry:
+    sinks:
+      - type: prometheus_pull
+      - type: otlp_grpc
+        endpoint: ${OTEL_EXPORTER_OTLP_METRICS_ENDPOINT}
+    sampling:
+      viz_events: 1.0
+      traces: 0.05
+  limits:
+    max_value_bytes: 1048576
+    request_max_bytes: 2097152
+deployment:
+  docker_compose: "3-node dev cluster with mapped volumes"
+  helm: "StatefulSet + headless Service + PVCs + PodDisruptionBudget"
+health_endpoints: ["/healthz", "/readyz"]
+observability_endpoints: ["/metrics", "gRPC VizEvent stream to vizd"]
+backup_restore:
+  snapshots: "SSTable manifest + files"

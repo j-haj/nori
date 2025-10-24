@@ -1,0 +1,29 @@
+context_version: 1
+module: observability_metrics
+crate: nori-observe
+goal: "Vendor-neutral observability ABI (metrics + typed events) with near-zero overhead when disabled."
+api_traits:
+  meter: |
+    pub trait Meter: Send + Sync + 'static {
+      fn counter(&self, name:&'static str, labels:&'static [(&'static str,&'static str)]) -> CounterHandle;
+      fn gauge(&self,   name:&'static str, labels:&'static [(&'static str,&'static str)]) -> GaugeHandle;
+      fn histo(&self,   name:&'static str, buckets:&'static [f64], labels:&'static [(&'static str,&'static str)]) -> HistoHandle;
+      fn emit(&self, evt: VizEvent);
+    }
+viz_event_schema:
+  - Wal: ["SegmentRoll{bytes}", "Fsync{ms}", "CorruptionTruncated"]
+  - Compaction: ["Scheduled", "Start", "Progress{pct}", "Finish{in_bytes,out_bytes}"]
+  - Raft: ["VoteReq{from}", "VoteGranted{from}", "LeaderElected{node}", "StepDown"]
+  - Swim: ["Alive", "Suspect", "Confirm", "Leave"]
+  - Shard: ["Plan", "SnapshotStart", "SnapshotDone", "Cutover"]
+  - Cache: ["hit_ratio"]
+cardinality_policy:
+  allowed_labels: [node_id, shard_id, role, level, outcome, op]
+  disallowed_labels: [key, client_id, ip]
+performance_budgets:
+  overhead_ns: { counter: "<=80", histogram: "<=200" }
+  alloc_hot_path: "0"
+adapters:
+  - nori-observe-prom: "OpenMetrics /metrics endpoint"
+  - nori-observe-otlp: "OTLP gRPC exporter; optional trace exemplars"
+  - norikv-vizd: "streams VizEvent to dashboard"

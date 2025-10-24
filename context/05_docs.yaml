@@ -1,0 +1,37 @@
+context_version: 1
+module: documentation
+goals:
+  - Beautiful, comprehensive docs with clear separation: Guides, Reference, Internals, API.
+tooling:
+  site: "MkDocs Material or Docusaurus (monorepo /docs)"
+  api_docs: "docs.rs for each public crate"
+structure:
+  guides:
+    - "Quickstart: run a 3-node cluster with Docker"
+    - "Build a service on NoriKV (TS & Go examples)"
+    - "Observability: wire Prom + Dashboard"
+  reference:
+    - "Config reference (all YAML keys)"
+    - "Protocol reference (gRPC/HTTP)"
+    - "SDK reference per language"
+  internals:
+    - "WAL format & recovery"
+    - "SSTable format & Bloom filters"
+    - "Compaction design & invariants"
+    - "Raft reads: leases vs read-index"
+    - "SWIM membership tuning"
+  api:
+    - "nori-wal: public API + examples"
+    - "nori-sstable: public API + examples"
+    - "nori-lsm: Storage trait mapping"
+    - "nori-raft: ReplicatedLog mapping"
+    - "nori-swim: Membership API"
+    - "nori-observe: Meter & VizEvent"
+quality_gates:
+  - "Every crate: README with overview, examples/, and minimal benchmark"
+  - "Doctests compile; rustdoc coverage ≥85%"
+  - "Design docs in /docs/internals kept in lockstep with code changes"
+style:
+  - "Use diagrams (Mermaid/Excalidraw) for flows"
+  - "Include ‘Why’ and ‘Tradeoffs’ sections"
+  - "Link to test cases as living specs"

@@ -1,0 +1,21 @@
+syntax = "proto3";
+package norikv.v1;
+
+message Version { uint64 term = 1; uint64 index = 2; }
+message PutRequest {
+  bytes key = 1; bytes value = 2; uint64 ttl_ms = 3;
+  string idempotency_key = 4; Version if_match = 5;
+}
+message PutResponse { Version version = 1; map<string,string> meta = 2; }
+message GetRequest { bytes key = 1; string consistency = 2; }
+message GetResponse { bytes value = 1; Version version = 2; map<string,string> meta = 3; }
+message DeleteRequest { bytes key = 1; string idempotency_key = 2; Version if_match = 3; }
+message DeleteResponse { bool tombstoned = 1; }
+message ClusterNode { string id = 1; string addr = 2; string role = 3; }
+message ShardReplica { string node_id = 1; bool leader = 2; }
+message ShardInfo { uint32 id = 1; repeated ShardReplica replicas = 2; }
+message ClusterView { uint64 epoch = 1; repeated ClusterNode nodes = 2; repeated ShardInfo shards = 3; }
+
+service Kv { rpc Put(PutRequest) returns (PutResponse); rpc Get(GetRequest) returns (GetResponse); rpc Delete(DeleteRequest) returns (DeleteResponse); }
+service Meta { rpc WatchCluster(ClusterView) returns (stream ClusterView); }
+service Admin { rpc TransferShard(ShardInfo) returns (ShardInfo); rpc SnapshotShard(ShardInfo) returns (ShardInfo); }

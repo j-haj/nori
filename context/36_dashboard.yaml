@@ -1,0 +1,21 @@
+context_version: 1
+module: dashboard
+goal: "Real-time animated UI for elections, storage, compaction, shards."
+services:
+  vizd: "Telemetry/VizEvent aggregator & websocket/gRPC-web bridge."
+  nodes: "Each server streams VizEvent via Meter.emit + exposes /metrics."
+frontend:
+  stack: "Next.js + React + Tailwind + shadcn/ui; Recharts/D3; Framer Motion animations"
+  routes:
+    - "/": "Cluster overview ring & health"
+    - "/shard/:id": "Raft log, followers, lag"
+    - "/storage": "LSM levels heatmap & compaction conveyors"
+    - "/network": "SWIM graph"
+    - "/playback": "Replay last 60 min with time slider"
+performance_budgets:
+  ws_updates_fps: 20
+  coalesce_window_ms: 50
+  bw_per_client_kbps: 150
+modes:
+  - dev_viz: "Emit 100% events; best for demos"
+  - prod_light: "Sampled events; metrics-driven visuals"

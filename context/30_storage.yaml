@@ -1,0 +1,82 @@
+context_version: 1
+module: storage_engine
+purpose: "Define WAL, SSTable, LSM compaction, and safety invariants for nori-lsm."
+interfaces:
+  storage_trait: |
+    #[async_trait::async_trait]
+    pub trait Storage: Send + Sync + 'static {
+      type Iter: KeyValueIter;
+      async fn get(&self, key: &[u8]) -> Result<Option<Value>, Error>;
+      async fn put(&self, key: Bytes, value: Bytes, ttl: Option<Duration>) -> Result<Version, Error>;
+      async fn delete(&self, key: &[u8], if_match: Option<Version>) -> Result<(), Error>;
+      async fn write_batch(&self, ops: Vec<Op>) -> Result<Version, Error>;
+      async fn iter_prefix(&self, prefix: &[u8]) -> Result<Self::Iter, Error>;
+      async fn snapshot(&self) -> Result<Box<dyn Read + Send>, Error>;
+    }
+formats:
+  record_v1:
+    header:
+      - klen: varint
+      - vlen: varint
+      - flags:
+          bits:
+            0: tombstone
+            1: ttl_present
+            2-3: compression (0:none,1:lz4,2:zstd)
+            4-7: reserved
+      - ttl_ms?: varint
+    body:
+      - key: bytes[klen]
+      - value: bytes[vlen]
+      - crc32c: uint32
+  sstable_v1:
+    block_size_bytes: 4096
+    restart_interval: 16
+    index: "two-level (per-block + top-level)"
+    bloom:
+      enabled: true
+      bits_per_key: 10
+      fp_target: ~0.009
+wal:
+  segment_bytes: 134_217_728
+  fsync_policy:
+    default: "batch"
+    batch_window_ms: 2-5
+    options: ["always","batch","os"]
+  recovery:
+    strategy: "prefix-valid only; truncate partial tail"
+    invariant: "After crash, applying WAL yields exactly-once semantics for last committed version."
+compaction:
+  style: "leveled"
+  levels:
+    L0: { trigger_sst: 8, stop_sst: 12 }
+    L1+: { size_ratio: 10 }
+  throttling:
+    iops_budget_per_level: 10000
+    write_amp_target: "<= 12x"
+  invariants:
+    - "Newest version shadows all older versions across levels."
+    - "No key range overlaps in L>=1."
+  tombstones:
+    gc_after_ms: 86_400_000
+    rule: "Preserve if any lower level may contain older live value."
+versioning:
+  source: "raft(term,index)"
+  read_visibility: "Only committed versions are visible."
+observability_hooks:
+  meter: "nori-observe::Meter injected in constructors"
+  metrics:
+    - wal_records_total
+    - wal_fsync_ms
+    - compaction_debt_bytes
+    - sstable_count{level}
+  events:
+    - Wal(SegmentRoll, Fsync, CorruptionTruncated)
+    - Compaction(Scheduled, Start, Progress, Finish)
+tests:
+  property:
+    - name: wal_recovery_keeps_last_committed
+    - name: compaction_never_drops_last_write
+  perf_targets:
+    p95_get_ms: 10
+    p95_put_ms: 20
