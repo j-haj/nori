@@ -301,4 +301,4 @@ The WAL emits typed events via `nori-observe::Meter`:
 
 ## License
 
-MIT OR Apache-2.0
+MIT
