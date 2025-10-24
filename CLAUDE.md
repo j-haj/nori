@@ -156,4 +156,4 @@ Rust Edition: **2021**
 - Connection pooling strategies
 
 ## Skeleton Status
-
+- Always reference @context/ files for planning, architecture, design decisions, and adding new features or code
