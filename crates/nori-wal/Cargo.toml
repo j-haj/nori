@@ -9,3 +9,13 @@ readme = "README.md"
 
 [dependencies]
 nori-observe = { path = "../nori-observe" }
+tokio = { version = "1", features = ["fs", "io-util", "sync", "time", "rt"] }
+bytes = "1"
+crc32c = "0.6"
+thiserror = "1"
+bitflags = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+proptest = "1"
+tempfile = "3"
