@@ -20,7 +20,7 @@
 //!     println!("Recovered {} records", recovery_info.valid_records);
 //!
 //!     // Append records
-//!     let record = Record::put(b"key", b"value");
+//!     let record = Record::put(b"key".as_slice(), b"value".as_slice());
 //!     let pos = wal.append(&record).await?;
 //!
 //!     // Sync to disk

@@ -96,6 +96,7 @@ pub enum WalKind {
     SegmentRoll { bytes: u64 },
     Fsync { ms: u32 },
     CorruptionTruncated,
+    SegmentGc,
 }
 
 #[derive(Clone, Debug)]
