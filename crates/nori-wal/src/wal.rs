@@ -191,6 +191,23 @@ impl Wal {
     pub async fn delete_segments_before(&self, position: Position) -> Result<u64, SegmentError> {
         self.manager.delete_segments_before(position).await
     }
+
+    /// Gracefully closes the WAL, ensuring all data is synced and finalized.
+    ///
+    /// This performs:
+    /// 1. Final fsync of any pending data
+    /// 2. Finalization of the current segment (truncate to actual size)
+    ///
+    /// After calling this, the WAL should not be used anymore.
+    pub async fn close(self) -> Result<(), SegmentError> {
+        // Sync any pending data
+        self.manager.sync().await?;
+
+        // Finalize current segment (truncate to actual written size)
+        self.manager.finalize_current().await?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -417,5 +434,31 @@ mod tests {
             ..Default::default()
         };
         assert!(Wal::open(config).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_wal_graceful_close() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = WalConfig {
+            dir: temp_dir.path().to_path_buf(),
+            ..Default::default()
+        };
+
+        let (wal, _) = Wal::open(config.clone()).await.unwrap();
+
+        // Write some records
+        for i in 0..5 {
+            let key = format!("key{}", i);
+            let record = Record::put(bytes::Bytes::from(key), b"value".as_slice());
+            wal.append(&record).await.unwrap();
+        }
+
+        // Gracefully close
+        wal.close().await.unwrap();
+
+        // Reopen and verify all records are present
+        let (wal2, recovery_info) = Wal::open(config).await.unwrap();
+        assert_eq!(recovery_info.valid_records, 5);
+        assert!(!recovery_info.corruption_detected);
     }
 }
