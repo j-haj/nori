@@ -36,16 +36,7 @@ Configuration for the Write-Ahead Log.
 
 ### Type Definition
 
-```rust
-#[derive(Debug, Clone)]
-pub struct WalConfig {
-    pub dir: PathBuf,
-    pub max_segment_size: u64,
-    pub fsync_policy: FsyncPolicy,
-    pub preallocate: bool,
-    pub node_id: u32,
-}
-```
+[View source in `crates/nori-wal/src/wal.rs`](https://github.com/j-haj/nori/blob/main/crates/nori-wal/src/wal.rs#L14-L30)
 
 ### Fields
 
@@ -113,35 +104,35 @@ assert_eq!(config.preallocate, true);
 use nori_wal::{Wal, WalConfig, FsyncPolicy};
 use std::time::Duration;
 
-// ❌ Invalid: zero segment size
+// Invalid: zero segment size
 let config = WalConfig {
     max_segment_size: 0,
     ..Default::default()
 };
 assert!(Wal::open(config).await.is_err());
 
-// ❌ Invalid: segment too small
+// Invalid: segment too small
 let config = WalConfig {
     max_segment_size: 512, // Less than 1MB
     ..Default::default()
 };
 assert!(Wal::open(config).await.is_err());
 
-// ❌ Invalid: batch window too large
+// Invalid: batch window too large
 let config = WalConfig {
     fsync_policy: FsyncPolicy::Batch(Duration::from_secs(2)),
     ..Default::default()
 };
 assert!(Wal::open(config).await.is_err());
 
-// ❌ Invalid: zero batch window
+// Invalid: zero batch window
 let config = WalConfig {
     fsync_policy: FsyncPolicy::Batch(Duration::ZERO),
     ..Default::default()
 };
 assert!(Wal::open(config).await.is_err());
 
-// ✅ Valid configurations
+// Valid configurations
 let config = WalConfig {
     max_segment_size: 64 * 1024 * 1024, // 64 MiB
     fsync_policy: FsyncPolicy::Batch(Duration::from_millis(10)),
@@ -307,19 +298,19 @@ Enable file pre-allocation for new segment files.
 
 **Benefits of Pre-allocation:**
 
-✅ **Early error detection** - "No space left on device" errors happen at segment creation, not during critical writes
+**Early error detection** - "No space left on device" errors happen at segment creation, not during critical writes
 
-✅ **Better filesystem locality** - Reduces fragmentation, keeps data contiguous
+**Better filesystem locality** - Reduces fragmentation, keeps data contiguous
 
-✅ **Improved performance** - Some filesystems (ext4, XFS) perform better with pre-allocated files
+**Improved performance** - Some filesystems (ext4, XFS) perform better with pre-allocated files
 
-✅ **Predictable space usage** - Easier to monitor disk usage
+**Predictable space usage** - Easier to monitor disk usage
 
 **Drawbacks:**
 
-❌ **Disk space** - Reserves full segment size immediately (even if not used)
+**Disk space** - Reserves full segment size immediately (even if not used)
 
-❌ **Slower startup** - Pre-allocation takes time (usually <100ms per segment)
+**Slower startup** - Pre-allocation takes time (usually <100ms per segment)
 
 **When to Disable:**
 
@@ -407,14 +398,7 @@ Fsync policy controlling durability vs performance trade-offs.
 
 ### Type Definition
 
-```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FsyncPolicy {
-    Always,
-    Batch(Duration),
-    Os,
-}
-```
+[View source in `crates/nori-wal/src/segment.rs`](https://github.com/j-haj/nori/blob/main/crates/nori-wal/src/segment.rs#L39-L49)
 
 ### Variants
 
@@ -450,7 +434,7 @@ let (wal, _) = Wal::open(config).await?;
 // Every append is immediately durable
 let record = Record::put(b"account:123", b"balance:1000");
 wal.append(&record).await?; // Blocks until synced to disk
-// ✅ Data is now durable, even if power fails right after
+// Data is now durable, even if power fails right after
 ```
 
 **Benchmark:**
@@ -519,12 +503,12 @@ wal.append(&record3).await?; // Returns immediately (buffered)
 
 // After 5ms (or manual sync), all 3 records are synced together
 tokio::time::sleep(Duration::from_millis(6)).await;
-// ✅ All 3 records now durable
+// All 3 records now durable
 
 // Or manually sync before the window expires
 wal.append(&record4).await?;
 wal.sync().await?; // Force immediate fsync
-// ✅ record4 is now durable
+// record4 is now durable
 ```
 
 **Choosing a Window Size:**
@@ -606,10 +590,10 @@ wal.append(&record1).await?;
 wal.append(&record2).await?;
 wal.append(&record3).await?;
 
-// ❌ Power failure here → All 3 records likely lost
+// Power failure here → All 3 records likely lost
 // (unless OS flushed the page cache)
 
-// ✅ To guarantee durability with FsyncPolicy::Os:
+// To guarantee durability with FsyncPolicy::Os:
 wal.append(&record4).await?;
 wal.sync().await?; // Explicit sync
 // Now record4 is durable
@@ -687,7 +671,7 @@ let (wal, _) = Wal::open(config).await?;
 
 // Every write is immediately durable
 wal.append(&Record::put(b"txn:123", b"transfer:$1000")).await?;
-// ✅ Guaranteed on disk before returning
+// Guaranteed on disk before returning
 ```
 
 ---
@@ -769,7 +753,7 @@ let config_node3 = WalConfig {
 ### 1. Choose Appropriate Segment Size
 
 ```rust
-// ✅ GOOD: Balance based on write volume
+// GOOD: Balance based on write volume
 let config = if high_write_volume {
     WalConfig {
         max_segment_size: 256 * 1024 * 1024, // 256 MiB
@@ -782,7 +766,7 @@ let config = if high_write_volume {
     }
 };
 
-// ❌ BAD: Too small (excessive overhead)
+// BAD: Too small (excessive overhead)
 let config = WalConfig {
     max_segment_size: 1024 * 1024, // 1 MiB - will rotate constantly
     ..Default::default()
@@ -792,7 +776,7 @@ let config = WalConfig {
 ### 2. Match Fsync Policy to Durability Needs
 
 ```rust
-// ✅ GOOD: Match policy to use case
+// GOOD: Match policy to use case
 let cache_config = WalConfig {
     fsync_policy: FsyncPolicy::Batch(Duration::from_millis(50)),
     ..Default::default()
@@ -803,7 +787,7 @@ let txn_config = WalConfig {
     ..Default::default()
 };
 
-// ❌ BAD: Using Os policy for critical data
+// BAD: Using Os policy for critical data
 let config = WalConfig {
     fsync_policy: FsyncPolicy::Os, // Can lose data!
     ..Default::default()
@@ -814,13 +798,13 @@ let config = WalConfig {
 ### 3. Use Pre-allocation on Production Systems
 
 ```rust
-// ✅ GOOD: Enable pre-allocation for production
+// GOOD: Enable pre-allocation for production
 let config = WalConfig {
     preallocate: true, // Fail fast on disk space issues
     ..Default::default()
 };
 
-// ⚠️  RISKY: Disable only if necessary
+//  RISKY: Disable only if necessary
 let config = WalConfig {
     preallocate: false, // Might fail mid-write!
     ..Default::default()
@@ -830,14 +814,14 @@ let config = WalConfig {
 ### 4. Set Meaningful Node IDs
 
 ```rust
-// ✅ GOOD: Unique node IDs in distributed systems
+// GOOD: Unique node IDs in distributed systems
 let node_id = hostname::get()?.to_str().unwrap().parse()?;
 let config = WalConfig {
     node_id,
     ..Default::default()
 };
 
-// ❌ BAD: All nodes use default node_id = 0
+// BAD: All nodes use default node_id = 0
 // (can't distinguish them in metrics)
 ```
 

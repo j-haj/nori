@@ -28,8 +28,8 @@ pub struct Wal: Send + Sync
 ```
 
 This means:
-- ✅ **Send**: Can be moved between threads
-- ✅ **Sync**: Can be shared between threads (via `Arc<Wal>`)
+- **Send**: Can be moved between threads
+- **Sync**: Can be shared between threads (via `Arc<Wal>`)
 
 However, the concurrency model has **specific characteristics** you need to understand.
 
@@ -45,12 +45,12 @@ let wal = Arc::new(wal);
 
 let wal1 = wal.clone();
 tokio::spawn(async move {
-    wal1.append(&record).await?;  // ✅ Safe
+    wal1.append(&record).await?;  // Safe
 });
 
 let wal2 = wal.clone();
 tokio::spawn(async move {
-    wal2.append(&record).await?;  // ✅ Safe
+    wal2.append(&record).await?;  // Safe
 });
 ```
 
@@ -552,7 +552,7 @@ for _ in 0..num_threads {
 // DON'T DO THIS:
 for _ in 0..num_threads {
     tokio::spawn(async move {
-        let (wal, _) = Wal::open(config.clone()).await?;  // ❌ Multiple WALs!
+        let (wal, _) = Wal::open(config.clone()).await?;  // Multiple WALs!
         wal.append(&record).await?;
     });
 }
@@ -609,7 +609,7 @@ tokio::join!(
 ```rust
 // Bad: Don't do this (not possible with current API, but illustrative)
 let current = wal.manager.current.lock().await;  // Acquire lock
-tokio::time::sleep(Duration::from_secs(1)).await;  // ❌ Hold lock across sleep!
+tokio::time::sleep(Duration::from_secs(1)).await;  // Hold lock across sleep!
 current.append(&record).await?;
 
 // Good: Lock is acquired and released within a single operation

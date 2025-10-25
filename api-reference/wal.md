@@ -169,9 +169,9 @@ Appends multiple records in a batch.
 - `Err(SegmentError)`: If batch append failed
 
 **Benefits over repeated `append()`**:
-- ✅ Acquires lock only once (not once per record)
-- ✅ Single fsync for entire batch (with `Always` policy)
-- ✅ Sequential writes without interleaving from other threads
+- Acquires lock only once (not once per record)
+- Single fsync for entire batch (with `Always` policy)
+- Sequential writes without interleaving from other threads
 
 **Example**:
 ```rust
@@ -217,7 +217,7 @@ wal.append(&record).await?;
 wal.flush().await?;  // Data in OS cache, not on disk yet
 ```
 
-⚠️ **Warning**: `flush()` does NOT guarantee durability! Use `sync()` for that.
+**Warning**: `flush()` does NOT guarantee durability! Use `sync()` for that.
 
 ---
 
@@ -338,7 +338,7 @@ Deletes all segments before the given position.
 - `Err(SegmentError)`: If deletion failed
 
 **Safety Requirements**:
-⚠️ **IMPORTANT**: Caller must ensure data is no longer needed before deleting!
+**IMPORTANT**: Caller must ensure data is no longer needed before deleting!
 
 Typical workflow:
 1. Compact old segments into new format (e.g., SSTables)

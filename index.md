@@ -23,13 +23,13 @@ A sharded, Raft-replicated, log-structured key-value store with portable SDKs an
 
 ### Key Features
 
-- 🗂️ **Log-Structured Storage**: LSM engine with WAL, SSTables, and automatic compaction
-- 🔄 **Raft Consensus**: Replicated logs with read-index optimization and lease-based reads
-- 🌐 **Automatic Sharding**: Jump Consistent Hash with configurable shards and replica placement
-- 💓 **SWIM Membership**: Gossip-based failure detection and cluster discovery
-- 📊 **First-Class Observability**: Vendor-neutral telemetry with Prometheus and OTLP exporters
-- 🌍 **Portable SDKs**: TypeScript, Python, Go, and Java clients with consistent APIs
-- 🦀 **100% Rust**: Safe, fast, and designed for production
+- **Log-Structured Storage**: LSM engine with WAL, SSTables, and automatic compaction
+- **Raft Consensus**: Replicated logs with read-index optimization and lease-based reads
+- **Automatic Sharding**: Jump Consistent Hash with configurable shards and replica placement
+- **SWIM Membership**: Gossip-based failure detection and cluster discovery
+- **First-Class Observability**: Vendor-neutral telemetry with Prometheus and OTLP exporters
+- **Portable SDKs**: TypeScript, Python, Go, and Java clients with consistent APIs
+- **100% Rust**: Safe, fast, and designed for production
 
 ---
 
@@ -54,12 +54,12 @@ NoriKV is built from six core crates, each solving a specific problem:
 
 | Crate | Purpose | Status |
 |-------|---------|--------|
-| **[nori-observe](https://github.com/j-haj/nori/tree/main/crates/nori-observe)** | Vendor-neutral observability ABI | ✅ Ready |
-| **[nori-wal](https://github.com/j-haj/nori/tree/main/crates/nori-wal)** | Write-ahead log with recovery | ✅ Ready |
-| **[nori-sstable](https://github.com/j-haj/nori/tree/main/crates/nori-sstable)** | Immutable sorted string tables | ✅ Ready |
-| **[nori-lsm](https://github.com/j-haj/nori/tree/main/crates/nori-lsm)** | LSM storage engine | ✅ Ready |
-| **[nori-swim](https://github.com/j-haj/nori/tree/main/crates/nori-swim)** | SWIM membership protocol | ✅ Ready |
-| **[nori-raft](https://github.com/j-haj/nori/tree/main/crates/nori-raft)** | Raft consensus algorithm | ✅ Ready |
+| **[nori-observe](https://github.com/j-haj/nori/tree/main/crates/nori-observe)** | Vendor-neutral observability ABI | Ready |
+| **[nori-wal](https://github.com/j-haj/nori/tree/main/crates/nori-wal)** | Write-ahead log with recovery | Ready |
+| **[nori-sstable](https://github.com/j-haj/nori/tree/main/crates/nori-sstable)** | Immutable sorted string tables | Ready |
+| **[nori-lsm](https://github.com/j-haj/nori/tree/main/crates/nori-lsm)** | LSM storage engine | Ready |
+| **[nori-swim](https://github.com/j-haj/nori/tree/main/crates/nori-swim)** | SWIM membership protocol | Ready |
+| **[nori-raft](https://github.com/j-haj/nori/tree/main/crates/nori-raft)** | Raft consensus algorithm | Ready |
 
 ---
 
@@ -211,10 +211,10 @@ NoriKV provides official SDKs for multiple languages:
 
 | Language | Package | Status |
 |----------|---------|--------|
-| TypeScript | `@norikv/client` | ✅ Ready |
-| Python | `norikv` | ✅ Ready |
-| Go | `github.com/j-haj/nori-go` | ✅ Ready |
-| Java | `com.norikv:norikv-client` | ✅ Ready |
+| TypeScript | `@norikv/client` | Ready |
+| Python | `norikv` | Ready |
+| Go | `github.com/j-haj/nori-go` | Ready |
+| Java | `com.norikv:norikv-client` | Ready |
 
 All SDKs share:
 - Consistent API design
@@ -383,7 +383,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## When to Use NoriKV
 
-### ✅ Great Fit
+### Great Fit
 
 - Need a **distributed key-value store** with strong consistency
 - Building **multi-tenant systems** with sharding
@@ -392,7 +392,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - Building in **Rust** and want safe, fast libraries
 - Care about **operational simplicity** (no complex configuration)
 
-### ❌ Not the Right Tool
+### Not the Right Tool
 
 - Need **SQL** or complex queries (use PostgreSQL, MySQL)
 - Ultra-low latency **< 10µs** required (use in-memory stores)
@@ -407,13 +407,13 @@ NoriKV is under active development. Current status:
 
 | Component | Status |
 |-----------|--------|
-| nori-wal | ✅ Production-ready |
-| nori-sstable | ✅ Production-ready |
-| nori-lsm | ✅ Production-ready |
-| nori-raft | 🚧 In development |
-| nori-swim | 🚧 In development |
-| Server | 🚧 In development |
-| SDKs | 📋 Planned |
+| nori-wal | Production-ready |
+| nori-sstable | Production-ready |
+| nori-lsm | Production-ready |
+| nori-raft | In development |
+| nori-swim | In development |
+| Server | In development |
+| SDKs | Planned |
 
 ---
 

@@ -524,12 +524,12 @@ Time: ~2μs (Zstd decompression)
 ### Why CRC at the end, not the beginning?
 
 **Pros of CRC at end**:
-- ✅ Can stream-encode without buffering entire record
-- ✅ Can calculate CRC incrementally while writing
-- ✅ Simpler code
+- Can stream-encode without buffering entire record
+- Can calculate CRC incrementally while writing
+- Simpler code
 
 **Cons**:
-- ❌ Must read entire record before validating CRC
+- Must read entire record before validating CRC
 
 For WAL use case (sequential reads), the trade-off favors simplicity.
 

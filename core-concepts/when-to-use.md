@@ -30,7 +30,7 @@ graph TD
     C -->|No| D[Consider alternatives<br/>e.g., B-tree with transactions]
     C -->|Yes| E[Do you need recovery after crashes?]
     E -->|No| F[Consider periodic snapshots instead]
-    E -->|Yes| G[✅ Use a WAL!]
+    E -->|Yes| G[Use a WAL!]
 
     style G fill:#90EE90
     style B fill:#FFB6C1
@@ -409,7 +409,7 @@ impl MetricsLog {
 
 ## Not Recommended Use Cases
 
-### ❌ Random Access Workloads
+### Random Access Workloads
 
 **Why not?**
 - WALs are optimized for sequential writes and reads
@@ -460,7 +460,7 @@ async fn update_user_good(&mut self, user_id: u64, value: &[u8]) -> Result<()> {
 
 ---
 
-### ❌ Read-Heavy Workloads
+### Read-Heavy Workloads
 
 **Why not?**
 - WALs are write-optimized
@@ -516,7 +516,7 @@ impl EventStore {
 
 ---
 
-### ❌ Large Binary Blobs
+### Large Binary Blobs
 
 **Why not?**
 - WALs are optimized for small records (bytes to kilobytes)
@@ -567,7 +567,7 @@ async fn store_video_good(video_id: &str, data: &[u8]) -> Result<()> {
 
 ---
 
-### ❌ In-Place Updates Required
+### In-Place Updates Required
 
 **Why not?**
 - WALs are append-only

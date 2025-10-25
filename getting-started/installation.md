@@ -56,11 +56,11 @@ nori-wal works on all platforms that Rust supports:
 
 | Platform | Status | Notes |
 |----------|--------|-------|
-| **Linux** | ✅ Fully supported | Uses `fallocate()` for optimal pre-allocation |
-| **macOS** | ✅ Fully supported | Uses `F_PREALLOCATE` for pre-allocation |
-| **Windows** | ✅ Fully supported | Uses standard `set_len()` for pre-allocation |
-| **BSD** | ✅ Supported | Uses fallback pre-allocation |
-| **Others** | ⚠️ Untested | Should work, but not regularly tested |
+| **Linux** | Fully supported | Uses `fallocate()` for optimal pre-allocation |
+| **macOS** | Fully supported | Uses `F_PREALLOCATE` for pre-allocation |
+| **Windows** | Fully supported | Uses standard `set_len()` for pre-allocation |
+| **BSD** | Supported | Uses fallback pre-allocation |
+| **Others** | Untested | Should work, but not regularly tested |
 
 ---
 
@@ -98,12 +98,12 @@ async fn main() {
 
     match result {
         Ok((wal, recovery_info)) => {
-            println!("✅ nori-wal is working!");
+            println!("nori-wal is working!");
             println!("   Recovered {} records", recovery_info.valid_records);
             drop(wal);
         }
         Err(e) => {
-            println!("❌ Error: {}", e);
+            println!("Error: {}", e);
         }
     }
 }
@@ -118,7 +118,7 @@ cargo run
 You should see:
 
 ```
-✅ nori-wal is working!
+nori-wal is working!
    Recovered 0 records
 ```
 

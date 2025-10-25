@@ -360,17 +360,17 @@ There are many WAL implementations out there. Why build another one?
 
 ### What nori-wal Provides
 
-✅ **Standalone**: Use it in any Rust project, no dependencies on a larger system
+**Standalone**: Use it in any Rust project, no dependencies on a larger system
 
-✅ **Production-ready**: Comprehensive error handling, recovery, observability
+**Production-ready**: Comprehensive error handling, recovery, observability
 
-✅ **Flexible**: Choose your durability vs. performance trade-off (fsync policies)
+**Flexible**: Choose your durability vs. performance trade-off (fsync policies)
 
-✅ **Well-documented**: You're reading it!
+**Well-documented**: You're reading it!
 
-✅ **Tested**: 37 tests including property tests for crash scenarios
+**Tested**: 37 tests including property tests for crash scenarios
 
-✅ **Fast**: 110K writes/sec with batched fsync (see [benchmarks](../performance/benchmarks))
+**Fast**: 110K writes/sec with batched fsync (see [benchmarks](../performance/benchmarks))
 
 ---
 

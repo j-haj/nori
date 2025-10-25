@@ -139,13 +139,13 @@ match Wal::open(config).await {
 All I/O methods are async and require a Tokio runtime:
 
 ```rust
-// ✅ Correct: Use with async runtime
+// Correct: Use with async runtime
 #[tokio::main]
 async fn main() {
     wal.append(&record).await?;
 }
 
-// ❌ Wrong: Can't call async methods in sync context
+// Wrong: Can't call async methods in sync context
 fn main() {
     wal.append(&record).await?;  // Compile error!
 }

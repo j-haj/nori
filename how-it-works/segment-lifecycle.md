@@ -130,10 +130,10 @@ if preallocate && actual_file_size == 0 {
 ```
 
 **Benefits**:
-- ✅ Early error detection (know immediately if disk is full)
-- ✅ Better filesystem locality (less fragmentation)
-- ✅ Improved performance on some filesystems
-- ✅ Prevents mid-write "no space left" errors
+- Early error detection (know immediately if disk is full)
+- Better filesystem locality (less fragmentation)
+- Improved performance on some filesystems
+- Prevents mid-write "no space left" errors
 
 **Cost**:
 - ~1-2ms latency when creating segment

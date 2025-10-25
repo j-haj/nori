@@ -126,7 +126,7 @@ A: The WAL recovery process scans all segments, validates each record with CRC32
 
 Choose your path:
 
-- 🚀 **[Start coding](quickstart)** - Get hands-on immediately
+- **[Start coding](quickstart)** - Get hands-on immediately
 - 📚 **[Learn concepts](../core-concepts/)** - Understand WALs deeply
 - ⚙️ **[Configure](configuration)** - Tune for your workload
 - 🏗️ **[Build something](../recipes/)** - See real-world examples

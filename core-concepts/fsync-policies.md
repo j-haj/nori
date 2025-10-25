@@ -39,10 +39,10 @@ graph TD
 
 | Layer | Survives Process Crash? | Survives OS Crash/Power Failure? |
 |-------|------------------------|----------------------------------|
-| Application buffer | ❌ No | ❌ No |
-| OS page cache | ✅ Yes | ❌ No |
-| Disk controller cache | ✅ Yes | ⚠️ Maybe (if battery-backed) |
-| Physical disk | ✅ Yes | ✅ Yes |
+| Application buffer | No | No |
+| OS page cache | Yes | No |
+| Disk controller cache | Yes | Maybe (if battery-backed) |
+| Physical disk | Yes | Yes |
 
 **Only data on physical disk is truly durable.**
 
@@ -131,19 +131,19 @@ That's a **2000-5000x slowdown!**
 You have to choose:
 
 **Option 1: Always fsync() - Maximum Durability**
-- ✅ Every write is guaranteed durable before returning
-- ✅ Zero data loss on power failure
-- ❌ Very slow (~200-500 writes/sec)
+- Every write is guaranteed durable before returning
+- Zero data loss on power failure
+- Very slow (~200-500 writes/sec)
 
 **Option 2: Never fsync() - Maximum Performance**
-- ✅ Blazing fast (~1M writes/sec)
-- ❌ Data loss on power failure (up to 30-60 seconds of writes)
-- ❌ Not acceptable for critical data
+- Blazing fast (~1M writes/sec)
+- Data loss on power failure (up to 30-60 seconds of writes)
+- Not acceptable for critical data
 
 **Option 3: Batched fsync() - Balanced**
-- ✅ Good performance (~50K-100K writes/sec)
-- ⚠️ Small data loss window (milliseconds)
-- ✅ Acceptable for most applications
+- Good performance (~50K-100K writes/sec)
+- Small data loss window (milliseconds)
+- Acceptable for most applications
 
 This is what `FsyncPolicy` in nori-wal controls.
 
@@ -173,9 +173,9 @@ wal.append(&record).await?;  // Internally calls fsync() before returning
 ```
 
 **Guarantees**:
-- ✅ Every `append()` is durable before it returns
-- ✅ Zero data loss on power failure
-- ✅ Suitable for financial transactions, critical data
+- Every `append()` is durable before it returns
+- Zero data loss on power failure
+- Suitable for financial transactions, critical data
 
 **Performance**:
 - ~200-500 writes/sec (disk-bound)
@@ -217,9 +217,9 @@ wal.append(&record4).await?;  // Calls fsync()
 ```
 
 **Guarantees**:
-- ⚠️ Potential data loss: up to `window` duration of writes on power failure
-- ✅ All writes are durable within `window` milliseconds
-- ✅ Good balance of performance and durability
+- Potential data loss: up to `window` duration of writes on power failure
+- All writes are durable within `window` milliseconds
+- Good balance of performance and durability
 
 **Performance** (5ms window):
 - ~50K-100K writes/sec
@@ -267,9 +267,9 @@ wal.append(&record).await?;  // No fsync! Data stays in OS cache
 Data is eventually flushed to disk by the OS, typically every 30-60 seconds (controlled by kernel settings like `vm.dirty_expire_centisecs` on Linux).
 
 **Guarantees**:
-- ❌ No durability guarantees!
-- ⚠️ Potential data loss: 30-60 seconds of writes on power failure
-- ✅ Data survives process crash (it's in OS cache)
+- No durability guarantees!
+- Potential data loss: 30-60 seconds of writes on power failure
+- Data survives process crash (it's in OS cache)
 
 **Performance**:
 - ~100K-1M writes/sec (memory-bound)
@@ -465,11 +465,11 @@ Here are real benchmark results from nori-wal on a typical SSD (Samsung 970 EVO)
 
 | Policy | Throughput (writes/sec) | p50 Latency | p99 Latency | Data Loss on Power Failure |
 |--------|------------------------|-------------|-------------|----------------------------|
-| `Always` | 420 | 2.1ms | 9.8ms | **0ms** ✅ |
-| `Batch(1ms)` | 45,000 | 45μs | 1.2ms | ≤1ms ⚠️ |
-| `Batch(5ms)` | 86,000 | 38μs | 5.3ms | ≤5ms ⚠️ |
-| `Batch(10ms)` | 95,000 | 35μs | 10.4ms | ≤10ms ⚠️ |
-| `Os` | 110,000 | 28μs | 95μs | 30-60s ❌ |
+| `Always` | 420 | 2.1ms | 9.8ms | **0ms** |
+| `Batch(1ms)` | 45,000 | 45μs | 1.2ms | ≤1ms |
+| `Batch(5ms)` | 86,000 | 38μs | 5.3ms | ≤5ms |
+| `Batch(10ms)` | 95,000 | 35μs | 10.4ms | ≤10ms |
+| `Os` | 110,000 | 28μs | 95μs | 30-60s |
 
 **Observations**:
 - `Always` is 200x slower than `Batch(5ms)`

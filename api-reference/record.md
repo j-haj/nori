@@ -31,15 +31,7 @@ A `Record` represents a single key-value operation in the WAL. Records support:
 
 ### Type Definition
 
-```rust
-pub struct Record {
-    pub key: Bytes,
-    pub value: Bytes,
-    pub tombstone: bool,
-    pub ttl: Option<Duration>,
-    pub compression: Compression,
-}
-```
+[View source in `crates/nori-wal/src/record.rs`](https://github.com/j-haj/nori/blob/main/crates/nori-wal/src/record.rs#L64-L72)
 
 ### Fields
 
@@ -59,9 +51,7 @@ pub struct Record {
 
 Creates a new PUT record.
 
-```rust
-pub fn put(key: impl Into<Bytes>, value: impl Into<Bytes>) -> Self
-```
+[View source](https://github.com/j-haj/nori/blob/main/crates/nori-wal/src/record.rs#L76-L84)
 
 **Parameters:**
 - `key` - The record's key (accepts `&[u8]`, `Vec<u8>`, `String`, etc.)
@@ -94,13 +84,7 @@ let record = Record::put(key, value);
 
 Creates a new PUT record with a time-to-live.
 
-```rust
-pub fn put_with_ttl(
-    key: impl Into<Bytes>,
-    value: impl Into<Bytes>,
-    ttl: Duration
-) -> Self
-```
+[View source](https://github.com/j-haj/nori/blob/main/crates/nori-wal/src/record.rs#L87-L95)
 
 **Parameters:**
 - `key` - The record's key
@@ -141,9 +125,7 @@ let record = Record::put_with_ttl(
 
 Creates a DELETE record (tombstone).
 
-```rust
-pub fn delete(key: impl Into<Bytes>) -> Self
-```
+[View source](https://github.com/j-haj/nori/blob/main/crates/nori-wal/src/record.rs#L98-L106)
 
 **Parameters:**
 - `key` - The key to delete
@@ -175,9 +157,7 @@ assert_eq!(record.value.len(), 0);
 
 Sets the compression algorithm for the record's value.
 
-```rust
-pub fn with_compression(mut self, compression: Compression) -> Self
-```
+[View source](https://github.com/j-haj/nori/blob/main/crates/nori-wal/src/record.rs#L109-L112)
 
 **Parameters:**
 - `compression` - Compression algorithm (`Compression::None`, `Compression::Lz4`, or `Compression::Zstd`)
@@ -243,9 +223,7 @@ let zstd = Record::put(b"k", value.as_bytes())
 
 Encodes the record into bytes with CRC32C checksum.
 
-```rust
-pub fn encode(&self) -> Bytes
-```
+[View source](https://github.com/j-haj/nori/blob/main/crates/nori-wal/src/record.rs#L115-L163)
 
 **Returns:** Encoded record as immutable `Bytes`.
 
@@ -298,9 +276,7 @@ file.write_all(&encoded).await?;
 
 Decodes a record from bytes, validating the CRC32C checksum.
 
-```rust
-pub fn decode(data: &[u8]) -> Result<(Self, usize), RecordError>
-```
+[View source](https://github.com/j-haj/nori/blob/main/crates/nori-wal/src/record.rs#L166-L199)
 
 **Parameters:**
 - `data` - Byte slice containing the encoded record
@@ -375,13 +351,7 @@ while offset < buffer.len() {
 
 Compression algorithm for record values.
 
-```rust
-pub enum Compression {
-    None = 0,
-    Lz4 = 1,
-    Zstd = 2,
-}
-```
+[View source](https://github.com/j-haj/nori/blob/main/crates/nori-wal/src/record.rs#L34-L39)
 
 **Variants:**
 
@@ -408,16 +378,7 @@ assert_eq!(comp as u8, 1);
 
 Errors that can occur during record encoding/decoding.
 
-```rust
-pub enum RecordError {
-    Io(io::Error),
-    CrcMismatch { expected: u32, actual: u32 },
-    InvalidCompression(u8),
-    CompressionFailed(String),
-    DecompressionFailed(String),
-    Incomplete,
-}
-```
+[View source](https://github.com/j-haj/nori/blob/main/crates/nori-wal/src/record.rs#L17-L31)
 
 **Variants:**
 
@@ -623,7 +584,7 @@ println!("Recovered {} keys", state.len());
 ### 1. Choose Appropriate Compression
 
 ```rust
-// ✅ GOOD: Compress large, repetitive data
+// GOOD: Compress large, repetitive data
 let large_json = serde_json::to_vec(&data)?;
 if large_json.len() > 1000 {
     Record::put(key, large_json).with_compression(Compression::Lz4)
@@ -631,7 +592,7 @@ if large_json.len() > 1000 {
     Record::put(key, large_json)
 }
 
-// ❌ BAD: Compress already compressed data
+// BAD: Compress already compressed data
 let jpeg = fs::read("photo.jpg")?;
 Record::put(b"photo", jpeg).with_compression(Compression::Lz4) // Wastes CPU
 ```
@@ -639,7 +600,7 @@ Record::put(b"photo", jpeg).with_compression(Compression::Lz4) // Wastes CPU
 ### 2. Handle TTL Properly
 
 ```rust
-// ✅ GOOD: Application enforces TTL
+// GOOD: Application enforces TTL
 struct CacheEntry {
     record: Record,
     inserted_at: SystemTime,
@@ -655,14 +616,14 @@ impl CacheEntry {
     }
 }
 
-// ❌ BAD: Assuming WAL auto-expires records
+// BAD: Assuming WAL auto-expires records
 // (it doesn't - TTL is just metadata)
 ```
 
 ### 3. Use Tombstones Correctly
 
 ```rust
-// ✅ GOOD: Tombstone to mark deletion
+// GOOD: Tombstone to mark deletion
 memtable.insert(key, value);
 wal.append(&Record::put(key, value)).await?;
 
@@ -670,14 +631,14 @@ wal.append(&Record::put(key, value)).await?;
 memtable.remove(key);
 wal.append(&Record::delete(key)).await?;
 
-// ❌ BAD: Overwriting with empty value
+// BAD: Overwriting with empty value
 wal.append(&Record::put(key, b"")).await? // Not a deletion!
 ```
 
 ### 4. Validate After Decode
 
 ```rust
-// ✅ GOOD: Check CRC on recovery
+// GOOD: Check CRC on recovery
 match Record::decode(data) {
     Ok((record, size)) => {
         // CRC validated automatically
@@ -690,7 +651,7 @@ match Record::decode(data) {
     Err(e) => return Err(e.into()),
 }
 
-// ❌ BAD: Skipping CRC check (don't do this)
+// BAD: Skipping CRC check (don't do this)
 // (decode() always validates CRC)
 ```
 

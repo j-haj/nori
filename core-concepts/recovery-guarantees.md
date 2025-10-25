@@ -250,7 +250,7 @@ RecoveryInfo {
     bytes_truncated: 0,
 }
 ```
-✅ **Meaning**: 10K records recovered cleanly from 2 segments. No corruption.
+**Meaning**: 10K records recovered cleanly from 2 segments. No corruption.
 
 ---
 
@@ -263,7 +263,7 @@ RecoveryInfo {
     bytes_truncated: 127,
 }
 ```
-⚠️ **Meaning**: 9,998 records recovered, but 2 records (127 bytes) were truncated due to partial writes. This is normal if you crashed mid-write.
+**Meaning**: 9,998 records recovered, but 2 records (127 bytes) were truncated due to partial writes. This is normal if you crashed mid-write.
 
 ---
 
@@ -276,7 +276,7 @@ RecoveryInfo {
     bytes_truncated: 0,
 }
 ```
-✅ **Meaning**: New WAL, no existing data. Normal for first run.
+**Meaning**: New WAL, no existing data. Normal for first run.
 
 ---
 
@@ -294,9 +294,9 @@ let config = WalConfig {
 ```
 
 **Guarantees**:
-- ✅ Every `append()` is synced before returning
-- ✅ If `append()` returns `Ok`, the record is durable
-- ✅ Zero data loss on crash
+- Every `append()` is synced before returning
+- If `append()` returns `Ok`, the record is durable
+- Zero data loss on crash
 
 **Example**:
 ```rust
@@ -318,9 +318,9 @@ let config = WalConfig {
 ```
 
 **Guarantees**:
-- ⚠️ Records are synced within the time window
-- ⚠️ Up to `window` worth of records may be lost on crash
-- ✅ All records synced before the last fsync are durable
+- Records are synced within the time window
+- Up to `window` worth of records may be lost on crash
+- All records synced before the last fsync are durable
 
 **Example**:
 ```rust
@@ -343,10 +343,10 @@ let config = WalConfig {
 ```
 
 **Guarantees**:
-- ❌ No durability guarantees!
-- ❌ OS flushes to disk eventually (30-60 seconds)
-- ⚠️ Data survives process crash (it's in OS cache)
-- ❌ Data lost on power failure
+- No durability guarantees!
+- OS flushes to disk eventually (30-60 seconds)
+- Data survives process crash (it's in OS cache)
+- Data lost on power failure
 
 **Example**:
 ```rust

@@ -317,7 +317,7 @@ Result: RecoveryInfo {
 }
 ```
 
-✅ **All data recovered**
+**All data recovered**
 
 ---
 
@@ -338,7 +338,7 @@ Result: RecoveryInfo {
 }
 ```
 
-⚠️ **Lost record 10 (was never fully written)**
+**Lost record 10 (was never fully written)**
 
 ---
 
@@ -360,7 +360,7 @@ Result: RecoveryInfo {
 }
 ```
 
-⚠️ **Lost R3, R4, R5 (everything from first corruption onward)**
+**Lost R3, R4, R5 (everything from first corruption onward)**
 
 ---
 
@@ -380,7 +380,7 @@ Result: RecoveryInfo {
 }
 ```
 
-✅ **Valid (no data lost, segment is just empty)**
+**Valid (no data lost, segment is just empty)**
 
 ---
 
@@ -404,7 +404,7 @@ Result: RecoveryInfo {
 }
 ```
 
-✅ **Recovered 6 out of 7 records**
+**Recovered 6 out of 7 records**
 
 ---
 
@@ -631,10 +631,10 @@ VizEvent::Wal(WalEvt {
 3. **Prefix-valid**: Keep all good data, truncate from first corruption
 
 **Prefix-valid is the right trade-off**:
-- ✅ Maximizes data recovery
-- ✅ Simple to implement and reason about
-- ✅ Preserves ordering guarantees
-- ✅ Standard approach (used by PostgreSQL, MySQL, etc.)
+- Maximizes data recovery
+- Simple to implement and reason about
+- Preserves ordering guarantees
+- Standard approach (used by PostgreSQL, MySQL, etc.)
 
 ---
 
