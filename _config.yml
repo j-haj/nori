@@ -100,6 +100,11 @@ kramdown:
 sass:
   style: compressed
 
+# Enable custom overrides
+# Just the Docs will look for _sass/custom directory
+color_scheme: nil
+search_enabled: true
+
 # Plugins
 plugins:
   - jekyll-seo-tag

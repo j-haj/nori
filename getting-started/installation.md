@@ -209,7 +209,7 @@ error: no matching package named `nori-wal` found
 
 ```toml
 [dependencies]
-nori-wal = { git = "https://github.com/norikv/norikv", branch = "main" }
+nori-wal = { git = "https://github.com/j-haj/nori", branch = "main" }
 ```
 
 Or use a local path during development:
@@ -221,4 +221,4 @@ nori-wal = { path = "../norikv/crates/nori-wal" }
 
 ---
 
-Need help? Check the [Troubleshooting Guide](../troubleshooting/) or [open an issue on GitHub](https://github.com/norikv/norikv/issues).
+Need help? Check the [Troubleshooting Guide](../troubleshooting/) or [open an issue on GitHub](https://github.com/j-haj/nori/issues).

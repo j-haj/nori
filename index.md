@@ -13,7 +13,7 @@ Production-ready Write-Ahead Log for Rust with automatic recovery, rotation, and
 {: .fs-6 .fw-300 }
 
 [Get Started](getting-started/quickstart){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
-[View on GitHub](https://github.com/norikv/norikv){: .btn .fs-5 .mb-4 .mb-md-0 }
+[View on GitHub](https://github.com/j-haj/nori){: .btn .fs-5 .mb-4 .mb-md-0 }
 
 ---
 
@@ -197,10 +197,10 @@ See the [API Reference](api-reference/) for complete details.
 
 ## Contributing
 
-nori-wal is open source (MIT license) and welcomes contributions! Found a bug? Have an idea? Check out our [Contributing Guide](https://github.com/norikv/norikv/blob/main/CONTRIBUTING.md).
+nori-wal is open source (MIT license) and welcomes contributions! Found a bug? Have an idea? Check out our [Contributing Guide](https://github.com/j-haj/nori/blob/main/CONTRIBUTING.md).
 
 ---
 
 ## License
 
-MIT License - see [LICENSE](https://github.com/norikv/norikv/blob/main/LICENSE) for details.
+MIT License - see [LICENSE](https://github.com/j-haj/nori/blob/main/LICENSE) for details.

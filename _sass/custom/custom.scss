@@ -1,0 +1,98 @@
+// Custom styles for nori-wal documentation
+// This file is automatically loaded by Just the Docs
+
+// Fix image sizing - prevent massive images
+img {
+  max-width: 100% !important;
+  height: auto !important;
+  display: block;
+  margin: 1rem auto;
+}
+
+// Mermaid diagrams - prevent them from being huge
+.mermaid {
+  text-align: center;
+  margin: 1rem 0;
+  max-width: 100%;
+
+  svg {
+    max-width: 100% !important;
+    max-height: 600px !important;
+    height: auto !important;
+  }
+}
+
+// Fix overly large headings
+.main-content {
+  h1 {
+    font-size: 1.75rem !important;
+    margin-top: 1.5rem !important;
+    margin-bottom: 1rem !important;
+  }
+
+  h2 {
+    font-size: 1.5rem !important;
+    margin-top: 1.5rem !important;
+    margin-bottom: 0.75rem !important;
+  }
+
+  h3 {
+    font-size: 1.25rem !important;
+    margin-top: 1.25rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  h4 {
+    font-size: 1.1rem !important;
+    margin-top: 1rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+}
+
+// Title size fix
+.fs-9 {
+  font-size: 2.5rem !important;
+}
+
+// Better table styling
+table {
+  width: 100%;
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem !important;
+
+  th, td {
+    padding: 0.5rem !important;
+  }
+}
+
+// Code block fixes
+pre {
+  overflow-x: auto !important;
+  max-width: 100% !important;
+}
+
+code {
+  font-size: 0.875em !important;
+}
+
+.highlight {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+// Mobile responsiveness
+@media (max-width: 768px) {
+  table {
+    font-size: 0.75rem !important;
+  }
+
+  .main-content {
+    h1 {
+      font-size: 1.5rem !important;
+    }
+
+    h2 {
+      font-size: 1.25rem !important;
+    }
+  }
+}
