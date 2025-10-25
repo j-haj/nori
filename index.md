@@ -2,14 +2,14 @@
 layout: default
 title: Home
 nav_order: 1
-description: "nori-wal is a production-ready Write-Ahead Log implementation in Rust with automatic recovery, configurable durability, and excellent performance."
+description: "NoriKV is a sharded, Raft-replicated, log-structured key-value store with portable SDKs and first-class observability."
 permalink: /
 ---
 
-# nori-wal
+# NoriKV
 {: .fs-9 }
 
-Production-ready Write-Ahead Log for Rust with automatic recovery, rotation, and configurable durability guarantees.
+A sharded, Raft-replicated, log-structured key-value store with portable SDKs and first-class observability.
 {: .fs-6 .fw-300 }
 
 [Get Started](getting-started/quickstart){: .btn .btn-primary .fs-5 .mb-4 .mb-md-0 .mr-2 }
@@ -17,43 +17,362 @@ Production-ready Write-Ahead Log for Rust with automatic recovery, rotation, and
 
 ---
 
-## What is nori-wal?
+## What is NoriKV?
 
-**nori-wal** is an append-only write-ahead log (WAL) designed for building reliable, high-performance storage systems. Think of it as a durable, sequential log where you can write records and be confident they'll survive crashes, power failures, and other disasters.
+**NoriKV** is a distributed key-value store built from composable, production-ready components. It combines battle-tested algorithms (Raft, SWIM, LSM) with modern observability and a clean architecture.
 
 ### Key Features
 
-- 🚀 **Fast**: 110K writes/sec with batch fsync, 3.3 GiB/s recovery speed
-- 💪 **Reliable**: CRC32C checksumming, automatic crash recovery, prefix-valid truncation
-- 🎯 **Configurable**: Choose your durability vs performance tradeoff
-- 🔧 **Production-ready**: Battle-tested recovery, proper error handling, comprehensive observability
-- 📦 **Zero dependencies** (except tokio): No complex dependency trees
-- 🦀 **100% Safe Rust**: No unsafe code in the public API
+- 🗂️ **Log-Structured Storage**: LSM engine with WAL, SSTables, and automatic compaction
+- 🔄 **Raft Consensus**: Replicated logs with read-index optimization and lease-based reads
+- 🌐 **Automatic Sharding**: Jump Consistent Hash with configurable shards and replica placement
+- 💓 **SWIM Membership**: Gossip-based failure detection and cluster discovery
+- 📊 **First-Class Observability**: Vendor-neutral telemetry with Prometheus and OTLP exporters
+- 🌍 **Portable SDKs**: TypeScript, Python, Go, and Java clients with consistent APIs
+- 🦀 **100% Rust**: Safe, fast, and designed for production
 
 ---
 
-## Quick Example
+## Architecture Overview
+
+NoriKV is built from six core crates, each solving a specific problem:
+
+```
+┌─────────────────────────────────────────────────┐
+│  NoriKV Server (DI composition)                 │
+├─────────────────────────────────────────────────┤
+│  Adapters: LSM, Raft, SWIM, gRPC, HTTP         │
+├─────────────────────────────────────────────────┤
+│  Ports: Storage, ReplicatedLog, Membership,    │
+│         Transport, Router traits                │
+├─────────────────────────────────────────────────┤
+│  Domain: Types, IDs, Versions, Errors          │
+└─────────────────────────────────────────────────┘
+```
+
+### Published Crates
+
+| Crate | Purpose | Status |
+|-------|---------|--------|
+| **[nori-observe](https://github.com/j-haj/nori/tree/main/crates/nori-observe)** | Vendor-neutral observability ABI | ✅ Ready |
+| **[nori-wal](https://github.com/j-haj/nori/tree/main/crates/nori-wal)** | Write-ahead log with recovery | ✅ Ready |
+| **[nori-sstable](https://github.com/j-haj/nori/tree/main/crates/nori-sstable)** | Immutable sorted string tables | ✅ Ready |
+| **[nori-lsm](https://github.com/j-haj/nori/tree/main/crates/nori-lsm)** | LSM storage engine | ✅ Ready |
+| **[nori-swim](https://github.com/j-haj/nori/tree/main/crates/nori-swim)** | SWIM membership protocol | ✅ Ready |
+| **[nori-raft](https://github.com/j-haj/nori/tree/main/crates/nori-raft)** | Raft consensus algorithm | ✅ Ready |
+
+---
+
+## Core Components
+
+### nori-wal: Write-Ahead Log
+
+Production-ready WAL with automatic recovery, rotation, and configurable durability.
 
 ```rust
 use nori_wal::{Wal, WalConfig, Record};
 
+let (wal, recovery_info) = Wal::open(WalConfig::default()).await?;
+let record = Record::put(b"user:42", b"alice@example.com");
+wal.append(&record).await?;
+```
+
+**Features:**
+- 110K writes/sec with batch fsync
+- CRC32C checksumming for corruption detection
+- Automatic crash recovery with prefix-valid truncation
+- LZ4/Zstd compression support
+
+[WAL Documentation →](core-concepts/what-is-wal)
+
+---
+
+### nori-sstable: Sorted String Tables
+
+Immutable, sorted key-value tables with bloom filters and compression.
+
+**Features:**
+- Block-based format with configurable block size
+- Bloom filters for negative lookups
+- Snappy/LZ4/Zstd compression
+- Range queries and iterators
+
+---
+
+### nori-lsm: LSM Storage Engine
+
+Embeddable LSM engine combining WAL, memtable, and SSTables.
+
+**Features:**
+- Leveled compaction strategy
+- Automatic background compaction
+- Point reads and range scans
+- Snapshot isolation
+
+---
+
+### nori-raft: Raft Consensus
+
+Production Raft implementation with modern optimizations.
+
+**Features:**
+- Leader election and log replication
+- Read-index optimization for consistent reads
+- Lease-based reads (linearizable without log appends)
+- Joint consensus for configuration changes
+- Snapshot support for log compaction
+
+---
+
+### nori-swim: SWIM Membership
+
+Gossip-based failure detection and cluster membership.
+
+**Features:**
+- Scalable failure detection
+- Eventual consistency for membership changes
+- Configurable timeouts and failure detectors
+- Integration with Raft for reconfiguration
+
+---
+
+### nori-observe: Observability ABI
+
+Vendor-neutral observability layer with zero dependencies.
+
+**Features:**
+- `Meter` trait for metrics and events
+- Prometheus/OpenMetrics exporter
+- OTLP exporter with trace exemplars
+- Typed `VizEvent` enums for dashboards
+- Zero-allocation hot paths
+
+---
+
+## Use Cases
+
+### Distributed Database
+
+Use all components together for a full distributed KV store:
+
+```
+Client → gRPC → Router → Raft → LSM → WAL/SSTables
+                            ↓
+                          SWIM (membership)
+```
+
+### Embedded Storage
+
+Use just the storage layer (LSM + WAL + SSTables):
+
+```rust
+use nori_lsm::{LsmEngine, LsmConfig};
+
+let engine = LsmEngine::open(LsmConfig::default()).await?;
+engine.put(b"key", b"value").await?;
+let value = engine.get(b"key").await?;
+```
+
+### Custom Consensus
+
+Use Raft with your own storage implementation:
+
+```rust
+use nori_raft::{Raft, RaftConfig, Storage};
+
+struct MyStorage { /* ... */ }
+impl Storage for MyStorage { /* ... */ }
+
+let raft = Raft::new(RaftConfig::default(), MyStorage::new());
+```
+
+---
+
+## Performance
+
+{: .important }
+> Benchmarks from Apple M2 Pro (10 cores, 16GB RAM). Production numbers will vary.
+
+| Component | Operation | Performance |
+|-----------|-----------|-------------|
+| **nori-wal** | Sequential writes (batch fsync) | 110K/sec |
+| **nori-wal** | Recovery | 3.3 GiB/s |
+| **nori-lsm** | Point reads (memtable hit) | <1µs |
+| **nori-lsm** | Point reads (SSTable L0) | ~10µs |
+| **nori-sstable** | Sequential scan | 52 MiB/s |
+
+[Detailed Benchmarks →](performance/benchmarks)
+
+---
+
+## SDKs
+
+NoriKV provides official SDKs for multiple languages:
+
+| Language | Package | Status |
+|----------|---------|--------|
+| TypeScript | `@norikv/client` | ✅ Ready |
+| Python | `norikv` | ✅ Ready |
+| Go | `github.com/j-haj/nori-go` | ✅ Ready |
+| Java | `com.norikv:norikv-client` | ✅ Ready |
+
+All SDKs share:
+- Consistent API design
+- Automatic retry and failover
+- Connection pooling
+- Type-safe key-value operations
+
+---
+
+## Architecture Highlights
+
+### Hexagonal Architecture
+
+NoriKV uses ports & adapters for clean separation:
+
+**Ports (traits):**
+- `Storage` - Key-value operations
+- `ReplicatedLog` - Consensus interface
+- `Membership` - Cluster state
+- `Transport` - Network communication
+
+**Adapters (implementations):**
+- LSM adapter for `Storage`
+- Raft adapter for `ReplicatedLog`
+- SWIM adapter for `Membership`
+- gRPC/HTTP adapters for `Transport`
+
+This design allows:
+- Testing with mock implementations
+- Swapping components (e.g., different storage engines)
+- Clear dependency boundaries
+
+---
+
+### Observability-First Design
+
+Every component emits typed events via `nori-observe`:
+
+```rust
+pub trait Meter: Send + Sync {
+    fn emit(&self, event: VizEvent);
+}
+
+pub enum VizEvent {
+    Wal(WalEvt),
+    Lsm(LsmEvt),
+    Raft(RaftEvt),
+    Swim(SwimEvt),
+}
+```
+
+These events power:
+- Prometheus metrics
+- Live dashboards (via WebSocket)
+- Distributed tracing (OTLP with exemplars)
+- Debug logs
+
+---
+
+### Consistent Hashing & Placement
+
+NoriKV uses Jump Consistent Hash for deterministic shard assignment:
+
+```rust
+fn key_to_shard(key: &[u8], num_shards: u32) -> u32 {
+    let hash = xxhash64(key, seed: 0);
+    jump_consistent_hash(hash, num_shards)
+}
+```
+
+**Benefits:**
+- Deterministic (same key → same shard)
+- Minimal movement on resize (only K/N keys move)
+- No routing table needed
+- Lock-free lookups
+
+Default: 1024 virtual shards, RF=3
+
+---
+
+## Documentation Structure
+
+This documentation covers the entire NoriKV project:
+
+### Core Concepts
+Learn the fundamentals of WAL, LSM, Raft, and SWIM.
+
+[Core Concepts →](core-concepts/what-is-wal)
+
+### Getting Started
+Quick tutorials to get up and running.
+
+[Quickstart →](getting-started/quickstart)
+
+### How It Works
+Deep dives into internals and algorithms.
+
+[How It Works →](how-it-works/record-format)
+
+### API Reference
+Complete API documentation for all crates.
+
+[API Reference →](api-reference/)
+
+### Recipes
+Common patterns and use cases.
+
+[Recipes →](recipes/)
+
+### Performance
+Benchmarks and optimization guides.
+
+[Performance →](performance/benchmarks)
+
+---
+
+## Quick Start
+
+### Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+# Full stack
+norikv-server = "0.1"
+
+# Individual crates
+nori-wal = "0.1"
+nori-lsm = "0.1"
+nori-raft = "0.1"
+nori-swim = "0.1"
+```
+
+### Basic Example
+
+```rust
+use nori_lsm::{LsmEngine, LsmConfig};
+use nori_wal::Record;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Open a WAL (automatically recovers from previous sessions)
-    let config = WalConfig::default();
-    let (wal, recovery_info) = Wal::open(config).await?;
+    // Open LSM engine (includes WAL and SSTables)
+    let config = LsmConfig::default();
+    let engine = LsmEngine::open(config).await?;
 
-    println!("Recovered {} records from previous session",
-        recovery_info.valid_records);
+    // Write data
+    engine.put(b"user:123", b"alice@example.com").await?;
 
-    // Append a record - it's crash-safe!
-    let record = Record::put(b"user:42", b"alice@example.com");
-    let position = wal.append(&record).await?;
+    // Read data
+    if let Some(value) = engine.get(b"user:123").await? {
+        println!("Value: {:?}", value);
+    }
 
-    // Read it back
-    let mut reader = wal.read_from(position).await?;
-    if let Some((record, _pos)) = reader.next_record().await? {
-        println!("Key: {:?}, Value: {:?}", record.key, record.value);
+    // Range scan
+    let range = engine.scan(b"user:", b"user:~").await?;
+    for (key, value) in range {
+        println!("{:?} → {:?}", key, value);
     }
 
     Ok(())
@@ -62,116 +381,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ---
 
-## Why Use a WAL?
-
-A Write-Ahead Log is fundamental to building reliable storage systems. Here's why:
-
-### Durability Without Complexity
-
-Instead of worrying about atomically updating complex data structures on disk, you append to a log. If you crash mid-operation, the log tells you exactly what happened.
-
-### Recovery Made Simple
-
-After a crash, just scan the log from the beginning. Valid records are kept, partial writes at the tail are discarded. No complex transaction recovery logic needed.
-
-### Foundation for Higher-Level Systems
-
-WALs are the building blocks for:
-- **Key-value stores** (like RocksDB, LevelDB)
-- **Databases** (PostgreSQL, MySQL, etc.)
-- **Message queues** (Kafka, Pulsar)
-- **Event sourcing** systems
-- **Replication** protocols
-
----
-
-## Performance at a Glance
-
-{: .important }
-> These numbers are from an Apple M2 Pro with 10 cores and 16GB RAM. Your mileage may vary, but they show what's possible.
-
-| Operation | Performance | Notes |
-|-----------|-------------|-------|
-| **Sequential Writes** | 110K writes/sec | 1KB records, OS fsync |
-| **Batch Writes** | 102 MiB/s | 1000-record batches |
-| **Recovery** | 3.3 GiB/s | Validates CRC on every record |
-| **Sequential Reads** | 52 MiB/s | Full scan with decode |
-
-Want details? Check out the [Performance Guide](performance/benchmarks).
-
----
-
-## Choose Your Durability Level
-
-nori-wal lets you pick the right tradeoff for your use case:
-
-```rust
-use nori_wal::FsyncPolicy;
-use std::time::Duration;
-
-// Maximum durability: fsync after every write
-//   Good for: Financial data, critical user data
-//   Performance: ~420 writes/sec
-let policy = FsyncPolicy::Always;
-
-// Balanced: batch fsyncs within 5ms window
-//   Good for: Most applications
-//   Performance: ~86K writes/sec
-let policy = FsyncPolicy::Batch(Duration::from_millis(5));
-
-// Maximum performance: let OS decide when to flush
-//   Good for: Event logs, metrics, caches
-//   Performance: ~110K writes/sec
-let policy = FsyncPolicy::Os;
-```
-
----
-
-## What Makes nori-wal Different?
-
-### Designed for Real-World Production
-
-- **Automatic recovery** with detailed metrics
-- **Segment rotation** at 128MB (configurable) prevents unbounded growth
-- **Garbage collection** API for safe cleanup after compaction
-- **File pre-allocation** (platform-specific) for better filesystem behavior
-- **Observability hooks** for metrics and events
-
-### Optimized for Modern Hardware
-
-- **64KB read buffers** reduce syscall overhead
-- **Batch append API** amortizes lock and fsync costs
-- **LZ4/Zstd compression** for compressible data
-- **Zero-copy reads** where possible
-- **Concurrent readers** don't block writers
-
-### Built on Solid Foundations
-
-- **CRC32C checksums** catch corruption early
-- **Varint encoding** for compact records
-- **Prefix-valid recovery** strategy (industry standard)
-- **Atomic truncation** using temp file + rename
-- **Platform-specific optimizations** (fallocate on Linux, F_PREALLOCATE on macOS)
-
----
-
-## When to Use nori-wal
+## When to Use NoriKV
 
 ### ✅ Great Fit
 
-- Building a **database** or **key-value store**
-- Implementing **event sourcing** or **CQRS**
-- Creating a **message queue** or **pub-sub system**
-- Need **crash-safe** append-only storage
-- Want **simple recovery** after failures
-- Building **replication** systems
+- Need a **distributed key-value store** with strong consistency
+- Building **multi-tenant systems** with sharding
+- Want **embeddable storage** components (use crates individually)
+- Need **observability** out of the box
+- Building in **Rust** and want safe, fast libraries
+- Care about **operational simplicity** (no complex configuration)
 
 ### ❌ Not the Right Tool
 
-- Need **random access** (use an index on top)
-- Ultra-low latency (< 10µs) required
-- **Read-heavy** workloads (WALs are write-optimized)
-- Don't need durability (use in-memory structures)
+- Need **SQL** or complex queries (use PostgreSQL, MySQL)
+- Ultra-low latency **< 10µs** required (use in-memory stores)
+- **Read-heavy** workloads with no writes (use caching layer)
+- Need **document storage** with flexible schemas (use MongoDB)
+
+---
+
+## Project Status
+
+NoriKV is under active development. Current status:
+
+| Component | Status |
+|-----------|--------|
+| nori-wal | ✅ Production-ready |
+| nori-sstable | ✅ Production-ready |
+| nori-lsm | ✅ Production-ready |
+| nori-raft | 🚧 In development |
+| nori-swim | 🚧 In development |
+| Server | 🚧 In development |
+| SDKs | 📋 Planned |
+
+---
+
+## Contributing
+
+NoriKV is open source (MIT license) and welcomes contributions!
+
+- **Found a bug?** [Open an issue](https://github.com/j-haj/nori/issues)
+- **Have an idea?** [Start a discussion](https://github.com/j-haj/nori/discussions)
+- **Want to contribute?** Check our [Contributing Guide](https://github.com/j-haj/nori/blob/main/CONTRIBUTING.md)
+
+---
+
+## License
+
+MIT License - see [LICENSE](https://github.com/j-haj/nori/blob/main/LICENSE) for details.
 
 ---
 
@@ -179,28 +437,16 @@ let policy = FsyncPolicy::Os;
 
 <div class="code-example" markdown="1">
 
-**New to WALs?**
+**New to distributed systems?**
 Start with [What is a Write-Ahead Log?](core-concepts/what-is-wal) to understand the fundamentals.
 
 **Ready to build?**
 Jump into the [5-Minute Quickstart](getting-started/quickstart) to get hands-on.
 
-**Want to understand the internals?**
-Check out [How It Works](how-it-works/record-format) for deep dives.
+**Want deep dives?**
+Check out [How It Works](how-it-works/record-format) for implementation details.
 
 **Need API docs?**
-See the [API Reference](api-reference/) for complete details.
+See the [API Reference](api-reference/) for complete API documentation.
 
 </div>
-
----
-
-## Contributing
-
-nori-wal is open source (MIT license) and welcomes contributions! Found a bug? Have an idea? Check out our [Contributing Guide](https://github.com/j-haj/nori/blob/main/CONTRIBUTING.md).
-
----
-
-## License
-
-MIT License - see [LICENSE](https://github.com/j-haj/nori/blob/main/LICENSE) for details.
