@@ -64,6 +64,17 @@ pub struct SegmentConfig {
     pub dir: PathBuf,
     /// Fsync policy for durability.
     pub fsync_policy: FsyncPolicy,
+    /// Enable file pre-allocation for new segments.
+    ///
+    /// When enabled, new segment files are pre-allocated to `max_segment_size`
+    /// using platform-specific APIs (fallocate on Linux, fcntl on macOS).
+    /// This provides:
+    /// - Early detection of "no space left on device" errors
+    /// - Better filesystem locality (reduced fragmentation)
+    /// - Improved performance on some filesystems
+    ///
+    /// Default: true
+    pub preallocate: bool,
 }
 
 impl Default for SegmentConfig {
@@ -72,6 +83,7 @@ impl Default for SegmentConfig {
             max_segment_size: DEFAULT_SEGMENT_SIZE,
             dir: PathBuf::from("wal"),
             fsync_policy: FsyncPolicy::default(),
+            preallocate: true,
         }
     }
 }
@@ -115,8 +127,8 @@ impl SegmentFile {
         // Pre-allocate space for new files (but track actual data written separately)
         let logical_size = if actual_data_size == 0 && create {
             if let Some(target_size) = preallocate_size {
-                // Use set_len to pre-allocate disk space
-                file.set_len(target_size).await?;
+                // Use platform-specific pre-allocation for better performance
+                crate::prealloc::preallocate(&file, target_size).await?;
                 file.sync_all().await?;
                 // Seek back to beginning since we'll be writing from offset 0
                 file.seek(std::io::SeekFrom::Start(0)).await?;
@@ -273,9 +285,13 @@ impl SegmentManager {
         // Find the latest segment ID
         let latest_id = find_latest_segment_id(&config.dir).await?;
 
-        // Open or create the current segment
-        // TODO: Enable pre-allocation once we have platform-specific fallocate support
-        let segment = SegmentFile::open(&config.dir, latest_id, true, None).await?;
+        // Open or create the current segment with optional pre-allocation
+        let preallocate_size = if config.preallocate {
+            Some(config.max_segment_size)
+        } else {
+            None
+        };
+        let segment = SegmentFile::open(&config.dir, latest_id, true, preallocate_size).await?;
 
         Ok(Self {
             config,
@@ -437,9 +453,13 @@ impl SegmentManager {
             kind: WalKind::SegmentRoll { bytes: old_size },
         }));
 
-        // Create new segment
-        // TODO: Enable pre-allocation once we have platform-specific fallocate support
-        let new_segment = SegmentFile::open(&self.config.dir, new_id, true, None).await?;
+        // Create new segment with optional pre-allocation
+        let preallocate_size = if self.config.preallocate {
+            Some(self.config.max_segment_size)
+        } else {
+            None
+        };
+        let new_segment = SegmentFile::open(&self.config.dir, new_id, true, preallocate_size).await?;
 
         // Swap in the new segment
         let mut current = self.current.lock().await;
@@ -530,10 +550,19 @@ impl SegmentManager {
         let file_arc = cache.get_or_open(position.segment_id, &self.config.dir).await?;
         drop(cache); // Release cache lock
 
+        // For the current segment, get the logical size to avoid reading pre-allocated zeros
+        let logical_size = if position.segment_id == *self.current_id.lock().await {
+            Some(self.current.lock().await.size)
+        } else {
+            // For finalized segments, use actual file size
+            None
+        };
+
         Ok(SegmentReader {
             file: file_arc,
             position: position.offset,
             segment_id: position.segment_id,
+            logical_end: logical_size,
         })
     }
 
@@ -559,12 +588,22 @@ pub struct SegmentReader {
     file: Arc<Mutex<File>>,
     position: u64,
     segment_id: u64,
+    /// Logical end of data (for pre-allocated segments that haven't been finalized).
+    /// If None, reads until actual EOF.
+    logical_end: Option<u64>,
 }
 
 impl SegmentReader {
     /// Reads the next record from the segment.
     pub async fn next_record(&mut self) -> Result<Option<(Record, Position)>, SegmentError> {
         const READ_BUFFER_SIZE: usize = 65536; // 64KB buffer for better performance
+
+        // Check if we've reached the logical end of data
+        if let Some(logical_end) = self.logical_end {
+            if self.position >= logical_end {
+                return Ok(None); // Reached logical EOF
+            }
+        }
 
         let mut file = self.file.lock().await;
 
@@ -681,6 +720,7 @@ mod tests {
             max_segment_size: DEFAULT_SEGMENT_SIZE,
             dir: temp_dir.path().to_path_buf(),
             fsync_policy: FsyncPolicy::Os, // Fast for tests
+            preallocate: false, // Disable for faster tests
         };
 
         let manager = SegmentManager::new(config, Arc::new(NoopMeter), 1)
@@ -701,6 +741,7 @@ mod tests {
             max_segment_size: 100, // Small size to trigger rotation
             dir: temp_dir.path().to_path_buf(),
             fsync_policy: FsyncPolicy::Os,
+            preallocate: false,
         };
 
         let manager = SegmentManager::new(config, Arc::new(NoopMeter), 1)
@@ -733,6 +774,7 @@ mod tests {
             max_segment_size: DEFAULT_SEGMENT_SIZE,
             dir: temp_dir.path().to_path_buf(),
             fsync_policy: FsyncPolicy::Os,
+            preallocate: false,
         };
 
         let manager = SegmentManager::new(config, Arc::new(NoopMeter), 1)
@@ -780,6 +822,7 @@ mod tests {
             max_segment_size: DEFAULT_SEGMENT_SIZE,
             dir: temp_dir.path().to_path_buf(),
             fsync_policy: FsyncPolicy::Os,
+            preallocate: false,
         };
 
         let manager = Arc::new(
@@ -833,6 +876,7 @@ mod tests {
             max_segment_size: DEFAULT_SEGMENT_SIZE,
             dir: temp_dir.path().to_path_buf(),
             fsync_policy: FsyncPolicy::Always,
+            preallocate: false,
         };
 
         let manager = SegmentManager::new(config, Arc::new(NoopMeter), 1)
@@ -867,6 +911,7 @@ mod tests {
             max_segment_size: DEFAULT_SEGMENT_SIZE,
             dir: temp_dir.path().to_path_buf(),
             fsync_policy: FsyncPolicy::Batch(Duration::from_millis(10)),
+            preallocate: false,
         };
 
         let manager = SegmentManager::new(config, Arc::new(NoopMeter), 1)
@@ -911,6 +956,7 @@ mod tests {
             max_segment_size: DEFAULT_SEGMENT_SIZE,
             dir: temp_dir.path().to_path_buf(),
             fsync_policy: FsyncPolicy::Os,
+            preallocate: false,
         };
 
         let manager = SegmentManager::new(config, Arc::new(NoopMeter), 1)

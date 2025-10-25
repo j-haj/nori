@@ -20,6 +20,11 @@ pub struct WalConfig {
     pub max_segment_size: u64,
     /// Fsync policy for durability (default: Batch with 5ms window).
     pub fsync_policy: FsyncPolicy,
+    /// Enable file pre-allocation for new segments (default: true).
+    ///
+    /// When enabled, new segment files are pre-allocated using platform-specific
+    /// APIs for better performance and early disk space detection.
+    pub preallocate: bool,
     /// Node ID for observability events.
     pub node_id: u32,
 }
@@ -30,6 +35,7 @@ impl Default for WalConfig {
             dir: PathBuf::from("wal"),
             max_segment_size: 128 * 1024 * 1024, // 128 MiB
             fsync_policy: FsyncPolicy::Batch(Duration::from_millis(5)),
+            preallocate: true,
             node_id: 0,
         }
     }
@@ -125,6 +131,7 @@ impl Wal {
             dir: config.dir.clone(),
             max_segment_size: config.max_segment_size,
             fsync_policy: config.fsync_policy,
+            preallocate: config.preallocate,
         };
 
         let manager = SegmentManager::new(segment_config, meter, config.node_id).await?;
