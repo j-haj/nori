@@ -164,61 +164,83 @@ impl Record {
 
     /// Decodes a record from bytes, validating the CRC32C checksum.
     pub fn decode(data: &[u8]) -> Result<(Self, usize), RecordError> {
-        let original_data = data;
-        let original_len = data.len();
-        let mut cursor = data;
-
-        // Need at least varint headers + flags + crc (minimum ~6 bytes)
-        if cursor.len() < 6 {
+        if data.len() < 6 {
             return Err(RecordError::Incomplete);
         }
 
-        // Decode klen and vlen
+        let mut cursor = data;
+
+        // Parse header: lengths, flags, and optional TTL
         let klen = decode_varint(&mut cursor)?;
         let vlen = decode_varint(&mut cursor)?;
+        let (tombstone, ttl, compression) = Self::decode_flags_and_ttl(&mut cursor)?;
 
-        // Decode flags
+        // Extract key and compressed value
+        let key = Self::extract_bytes(&mut cursor, klen)?;
+        let compressed_value = Self::extract_bytes(&mut cursor, vlen)?;
+
+        // Verify CRC
+        let bytes_consumed = data.len() - cursor.len() + 4;
+        Self::verify_crc(data, bytes_consumed, &mut cursor)?;
+
+        // Decompress value
+        let value = Self::decompress_value(compressed_value, compression)?;
+
+        Ok((
+            Record {
+                key,
+                value,
+                tombstone,
+                ttl,
+                compression,
+            },
+            bytes_consumed,
+        ))
+    }
+
+    fn decode_flags_and_ttl(
+        cursor: &mut &[u8],
+    ) -> Result<(bool, Option<Duration>, Compression), RecordError> {
         if cursor.is_empty() {
             return Err(RecordError::Incomplete);
         }
+
         let flags_byte = cursor[0];
         cursor.advance(1);
 
         let flags = Flags::from_bits_truncate(flags_byte);
         let tombstone = flags.contains(Flags::TOMBSTONE);
-        let ttl_present = flags.contains(Flags::TTL_PRESENT);
         let compression_bits = (flags_byte & 0b0000_1100) >> 2;
         let compression = Compression::from_bits(compression_bits)?;
 
-        // Decode TTL if present
-        let ttl = if ttl_present {
-            let ttl_ms = decode_varint(&mut cursor)?;
+        let ttl = if flags.contains(Flags::TTL_PRESENT) {
+            let ttl_ms = decode_varint(cursor)?;
             Some(Duration::from_millis(ttl_ms))
         } else {
             None
         };
 
-        // Decode key and value
-        if cursor.len() < (klen + vlen + 4) as usize {
+        Ok((tombstone, ttl, compression))
+    }
+
+    fn extract_bytes(cursor: &mut &[u8], len: u64) -> Result<Bytes, RecordError> {
+        let len = len as usize;
+        if cursor.len() < len {
             return Err(RecordError::Incomplete);
         }
 
-        let key = Bytes::copy_from_slice(&cursor[..klen as usize]);
-        cursor.advance(klen as usize);
+        let bytes = Bytes::copy_from_slice(&cursor[..len]);
+        cursor.advance(len);
+        Ok(bytes)
+    }
 
-        let compressed_value = Bytes::copy_from_slice(&cursor[..vlen as usize]);
-        cursor.advance(vlen as usize);
-
-        // Verify CRC32C
+    fn verify_crc(data: &[u8], bytes_consumed: usize, cursor: &mut &[u8]) -> Result<(), RecordError> {
         if cursor.len() < 4 {
             return Err(RecordError::Incomplete);
         }
 
         let stored_crc = cursor.get_u32_le();
-        let bytes_consumed = original_len - cursor.len();
-
-        // Calculate CRC over everything except the CRC itself
-        let data_for_crc = &original_data[..bytes_consumed - 4];
+        let data_for_crc = &data[..bytes_consumed - 4];
         let calculated_crc = crc32c::crc32c(data_for_crc);
 
         if stored_crc != calculated_crc {
@@ -228,33 +250,25 @@ impl Record {
             });
         }
 
-        // Decompress value if needed
-        let value = match compression {
-            Compression::None => compressed_value,
+        Ok(())
+    }
+
+    fn decompress_value(compressed: Bytes, compression: Compression) -> Result<Bytes, RecordError> {
+        match compression {
+            Compression::None => Ok(compressed),
             Compression::Lz4 => {
-                // Extract original size and decompress
-                let mut cursor = &compressed_value[..];
+                let mut cursor = &compressed[..];
                 let original_size = decode_varint(&mut cursor)? as usize;
                 let decompressed = lz4::block::decompress(cursor, Some(original_size as i32))
                     .map_err(|e| RecordError::DecompressionFailed(e.to_string()))?;
-                Bytes::from(decompressed)
+                Ok(Bytes::from(decompressed))
             }
             Compression::Zstd => {
-                let decompressed = zstd::decode_all(&compressed_value[..])
+                let decompressed = zstd::decode_all(&compressed[..])
                     .map_err(|e| RecordError::DecompressionFailed(e.to_string()))?;
-                Bytes::from(decompressed)
+                Ok(Bytes::from(decompressed))
             }
-        };
-
-        let record = Record {
-            key,
-            value,
-            tombstone,
-            ttl,
-            compression,
-        };
-
-        Ok((record, bytes_consumed))
+        }
     }
 }
 
