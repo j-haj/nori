@@ -1,4 +1,5 @@
 [workspace]
+resolver = "2"
 members = [
   "crates/nori-observe",
   "crates/nori-observe-prom",

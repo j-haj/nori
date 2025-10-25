@@ -8,7 +8,9 @@ Append-only write-ahead log with automatic recovery, rotation, and configurable 
 - **Automatic segment rotation** at 128MB (configurable)
 - **Crash recovery** with prefix-valid strategy and partial-tail truncation
 - **Configurable fsync policies**: Always, Batch (time-windowed), or OS-managed
-- **Multi-segment support** with concurrent readers
+- **Batch append API** for high-throughput workloads (amortizes lock and fsync overhead)
+- **Compression support**: LZ4 (fast) and Zstd (high ratio) for reducing storage
+- **Multi-segment support** with concurrent readers and 64KB read buffers
 - **First-class observability** via `nori-observe` (vendor-neutral metrics and events)
 - **Zero-copy reads** where possible
 
@@ -34,13 +36,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Recovered {} records", recovery_info.valid_records);
 
-    // Append records
+    // Append a single record
     let record = Record::put(b"key", b"value");
     let position = wal.append(&record).await?;
 
-    // Delete a key (tombstone)
-    let delete = Record::delete(b"old_key");
-    wal.append(&delete).await?;
+    // Batch append for better performance
+    let records = vec![
+        Record::put(b"key1", b"value1"),
+        Record::put(b"key2", b"value2"),
+        Record::delete(b"old_key"),  // Tombstone
+    ];
+    let positions = wal.append_batch(&records).await?;
 
     // Sync to disk
     wal.sync().await?;
@@ -159,9 +165,14 @@ let record = Record::put_with_ttl(
     Duration::from_secs(3600)
 );
 
-// PUT with compression (note: compression not yet implemented)
+// PUT with compression (Lz4 or Zstd)
+use nori_wal::Compression;
 let record = Record::put(b"large_key", b"large_value")
     .with_compression(Compression::Lz4);
+
+// Zstd offers better compression ratio
+let record = Record::put(b"large_key", b"large_value")
+    .with_compression(Compression::Zstd);
 ```
 
 ### DELETE Records (Tombstones)
@@ -170,6 +181,34 @@ let record = Record::put(b"large_key", b"large_value")
 let record = Record::delete(b"key_to_remove");
 assert!(record.tombstone);
 ```
+
+## Compression
+
+Compression can significantly reduce WAL size for compressible data. Two algorithms are supported:
+
+| Algorithm | Speed | Ratio | Use Case |
+|-----------|-------|-------|----------|
+| `Lz4` | Very Fast | Moderate | Default for most workloads |
+| `Zstd` | Fast | High | When storage is more important than CPU |
+| `None` | Fastest | 1:1 | Already compressed data (images, video) |
+
+```rust
+use nori_wal::Compression;
+
+// Fast compression for text, JSON, etc.
+let record = Record::put(b"data", b"{'key': 'value'}".repeat(100))
+    .with_compression(Compression::Lz4);
+
+// Better compression ratio for large values
+let record = Record::put(b"data", large_value)
+    .with_compression(Compression::Zstd);
+
+// No compression for already compressed data
+let record = Record::put(b"image", jpeg_bytes)
+    .with_compression(Compression::None);
+```
+
+Compression is applied to the value only; keys are always stored uncompressed for efficient parsing.
 
 ## Architecture
 
