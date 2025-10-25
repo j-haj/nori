@@ -310,11 +310,7 @@ WalConfig {
 
 Click through to detailed documentation for each type:
 
-- **[Wal](wal)** - Main WAL API
-- **[Record](record)** - Record creation and metadata
-- **[WalConfig](config)** - Configuration options
-- **[Position](position)** - Position in the log
-- **[RecoveryInfo](recovery-info)** - Recovery results
-- **[FsyncPolicy](fsync-policy)** - Durability policies
-- **[Compression](compression)** - Compression algorithms
-- **[Errors](errors)** - Error types and handling
+- **[Wal](wal)** - Main WAL API with all methods
+- **[Record](record)** - Record creation, encoding, and compression
+- **[Configuration](config)** - WalConfig and FsyncPolicy options
+- **[Errors & Types](errors)** - Error types, Position, and RecoveryInfo
