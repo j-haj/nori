@@ -311,19 +311,9 @@ impl SegmentManager {
         while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
 
-            // Skip non-WAL files
-            if path.extension().and_then(|e| e.to_str()) != Some("wal") {
-                continue;
-            }
-
             // Parse segment ID from filename
-            let segment_id = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .and_then(|s| s.parse::<u64>().ok());
-
-            // Delete if this segment is before the cutoff position
-            if let Some(id) = segment_id {
+            if let Some(id) = parse_segment_id_from_path(&path) {
+                // Delete if this segment is before the cutoff position
                 if id < position.segment_id {
                     tokio::fs::remove_file(&path).await?;
                     deleted_count += 1;
@@ -358,47 +348,7 @@ impl SegmentManager {
         let segment_id = current.id;
 
         // Apply fsync policy
-        match self.config.fsync_policy {
-            FsyncPolicy::Always => {
-                // Always fsync immediately after write
-                let start = Instant::now();
-                current.sync().await?;
-                let elapsed_ms = start.elapsed().as_millis() as u32;
-
-                self.meter.emit(VizEvent::Wal(WalEvt {
-                    node: self.node_id,
-                    seg: current.id,
-                    kind: WalKind::Fsync { ms: elapsed_ms },
-                }));
-            }
-            FsyncPolicy::Batch(window) => {
-                // Check if we need to fsync based on time window
-                let mut last_sync = self.last_fsync.lock().await;
-                let should_sync = match *last_sync {
-                    None => true,
-                    Some(last) => last.elapsed() >= window,
-                };
-
-                if should_sync {
-                    // Update timestamp BEFORE fsync to prevent multiple concurrent fsyncs
-                    let fsync_start = Instant::now();
-                    *last_sync = Some(fsync_start);
-                    drop(last_sync); // Release lock before expensive fsync
-
-                    current.sync().await?;
-                    let elapsed_ms = fsync_start.elapsed().as_millis() as u32;
-
-                    self.meter.emit(VizEvent::Wal(WalEvt {
-                        node: self.node_id,
-                        seg: current.id,
-                        kind: WalKind::Fsync { ms: elapsed_ms },
-                    }));
-                }
-            }
-            FsyncPolicy::Os => {
-                // No fsync - let OS handle it
-            }
-        }
+        self.apply_fsync_policy(&mut current, segment_id).await?;
 
         Ok(Position { segment_id, offset })
     }
@@ -439,44 +389,7 @@ impl SegmentManager {
         let segment_id = current.id;
 
         // Apply fsync policy once for entire batch
-        match self.config.fsync_policy {
-            FsyncPolicy::Always => {
-                let start = Instant::now();
-                current.sync().await?;
-                let elapsed_ms = start.elapsed().as_millis() as u32;
-
-                self.meter.emit(VizEvent::Wal(WalEvt {
-                    node: self.node_id,
-                    seg: segment_id,
-                    kind: WalKind::Fsync { ms: elapsed_ms },
-                }));
-            }
-            FsyncPolicy::Batch(window) => {
-                let mut last_sync = self.last_fsync.lock().await;
-                let should_sync = match *last_sync {
-                    None => true,
-                    Some(last) => last.elapsed() >= window,
-                };
-
-                if should_sync {
-                    let fsync_start = Instant::now();
-                    *last_sync = Some(fsync_start);
-                    drop(last_sync);
-
-                    current.sync().await?;
-                    let elapsed_ms = fsync_start.elapsed().as_millis() as u32;
-
-                    self.meter.emit(VizEvent::Wal(WalEvt {
-                        node: self.node_id,
-                        seg: segment_id,
-                        kind: WalKind::Fsync { ms: elapsed_ms },
-                    }));
-                }
-            }
-            FsyncPolicy::Os => {
-                // No fsync - let OS handle it
-            }
-        }
+        self.apply_fsync_policy(&mut current, segment_id).await?;
 
         Ok(positions)
     }
@@ -536,6 +449,80 @@ impl SegmentManager {
         Ok(())
     }
 
+    /// Applies the configured fsync policy to the current segment.
+    ///
+    /// Handles all three fsync policies (Always, Batch, Os) and emits
+    /// appropriate observability events.
+    async fn apply_fsync_policy(
+        &self,
+        current: &mut SegmentFile,
+        segment_id: u64,
+    ) -> Result<(), SegmentError> {
+        match self.config.fsync_policy {
+            FsyncPolicy::Always => {
+                self.fsync_with_timing(current, segment_id).await
+            }
+            FsyncPolicy::Batch(window) => {
+                self.fsync_if_window_elapsed(current, segment_id, window).await
+            }
+            FsyncPolicy::Os => {
+                // No fsync - let OS handle it
+                Ok(())
+            }
+        }
+    }
+
+    /// Performs fsync and emits timing event.
+    async fn fsync_with_timing(
+        &self,
+        current: &mut SegmentFile,
+        segment_id: u64,
+    ) -> Result<(), SegmentError> {
+        let start = Instant::now();
+        current.sync().await?;
+        let elapsed_ms = start.elapsed().as_millis() as u32;
+
+        self.meter.emit(VizEvent::Wal(WalEvt {
+            node: self.node_id,
+            seg: segment_id,
+            kind: WalKind::Fsync { ms: elapsed_ms },
+        }));
+
+        Ok(())
+    }
+
+    /// Performs fsync if the time window has elapsed since last sync.
+    async fn fsync_if_window_elapsed(
+        &self,
+        current: &mut SegmentFile,
+        segment_id: u64,
+        window: Duration,
+    ) -> Result<(), SegmentError> {
+        let mut last_sync = self.last_fsync.lock().await;
+        let should_sync = match *last_sync {
+            None => true,
+            Some(last) => last.elapsed() >= window,
+        };
+
+        if should_sync {
+            // Update timestamp BEFORE fsync to prevent multiple concurrent fsyncs
+            let fsync_start = Instant::now();
+            *last_sync = Some(fsync_start);
+            drop(last_sync); // Release lock before expensive fsync
+
+            current.sync().await?;
+            let elapsed_ms = fsync_start.elapsed().as_millis() as u32;
+
+            self.meter.emit(VizEvent::Wal(WalEvt {
+                node: self.node_id,
+                seg: segment_id,
+                kind: WalKind::Fsync { ms: elapsed_ms },
+            }));
+        }
+
+        Ok(())
+    }
+
     /// Reads records from a segment starting at the given position.
     pub async fn read_from(&self, position: Position) -> Result<SegmentReader, SegmentError> {
         // Get file from cache (or open if not cached)
@@ -584,7 +571,7 @@ impl SegmentReader {
         // Seek to the current position
         file.seek(std::io::SeekFrom::Start(self.position)).await?;
 
-        // Try to read some data
+        // Read initial buffer
         let mut buffer = vec![0u8; READ_BUFFER_SIZE];
         let n = file.read(&mut buffer).await?;
 
@@ -594,9 +581,9 @@ impl SegmentReader {
 
         buffer.truncate(n);
 
-        // Try to decode a record
-        match Record::decode(&buffer) {
-            Ok((record, size)) => {
+        // Try to decode the record, reading more data if needed
+        match self.try_decode_with_retry(&mut buffer, &mut file, n, READ_BUFFER_SIZE).await? {
+            Some((record, size)) => {
                 let pos = Position {
                     segment_id: self.segment_id,
                     offset: self.position,
@@ -604,28 +591,45 @@ impl SegmentReader {
                 self.position += size as u64;
                 Ok(Some((record, pos)))
             }
-            Err(crate::record::RecordError::Incomplete) if n == READ_BUFFER_SIZE => {
-                // Need more data, read more
-                let mut more_data = vec![0u8; READ_BUFFER_SIZE];
-                let additional = file.read(&mut more_data).await?;
-                buffer.extend_from_slice(&more_data[..additional]);
+            None => Ok(None),
+        }
+    }
 
-                match Record::decode(&buffer) {
-                    Ok((record, size)) => {
-                        let pos = Position {
-                            segment_id: self.segment_id,
-                            offset: self.position,
-                        };
-                        self.position += size as u64;
-                        Ok(Some((record, pos)))
-                    }
-                    Err(e) => Err(SegmentError::Record(e)),
-                }
+    /// Attempts to decode a record, reading more data if the initial buffer is incomplete.
+    async fn try_decode_with_retry(
+        &self,
+        buffer: &mut Vec<u8>,
+        file: &mut File,
+        bytes_read: usize,
+        buffer_size: usize,
+    ) -> Result<Option<(Record, usize)>, SegmentError> {
+        match Record::decode(buffer) {
+            Ok((record, size)) => Ok(Some((record, size))),
+            Err(crate::record::RecordError::Incomplete) if bytes_read == buffer_size => {
+                // Buffer was full but record is incomplete - read more data
+                self.read_more_and_decode(buffer, file, buffer_size).await
             }
             Err(crate::record::RecordError::Incomplete) => {
                 // Incomplete at EOF - this is fine during recovery
                 Ok(None)
             }
+            Err(e) => Err(SegmentError::Record(e)),
+        }
+    }
+
+    /// Reads additional data and attempts to decode again.
+    async fn read_more_and_decode(
+        &self,
+        buffer: &mut Vec<u8>,
+        file: &mut File,
+        buffer_size: usize,
+    ) -> Result<Option<(Record, usize)>, SegmentError> {
+        let mut more_data = vec![0u8; buffer_size];
+        let additional = file.read(&mut more_data).await?;
+        buffer.extend_from_slice(&more_data[..additional]);
+
+        match Record::decode(buffer) {
+            Ok((record, size)) => Ok(Some((record, size))),
             Err(e) => Err(SegmentError::Record(e)),
         }
     }
@@ -642,21 +646,26 @@ async fn find_latest_segment_id(dir: &Path) -> Result<u64, SegmentError> {
     let mut max_id = 0u64;
 
     while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-        if let Some(ext) = path.extension() {
-            if ext == "wal" {
-                if let Some(stem) = path.file_stem() {
-                    if let Some(stem_str) = stem.to_str() {
-                        if let Ok(id) = stem_str.parse::<u64>() {
-                            max_id = max_id.max(id);
-                        }
-                    }
-                }
-            }
+        if let Some(id) = parse_segment_id_from_path(&entry.path()) {
+            max_id = max_id.max(id);
         }
     }
 
     Ok(max_id)
+}
+
+/// Parses a segment ID from a .wal file path.
+///
+/// Returns None if the path is not a valid .wal file or cannot be parsed.
+fn parse_segment_id_from_path(path: &Path) -> Option<u64> {
+    // Check extension is "wal"
+    if path.extension()?.to_str()? != "wal" {
+        return None;
+    }
+
+    // Parse the filename stem as a u64
+    let stem_str = path.file_stem()?.to_str()?;
+    stem_str.parse::<u64>().ok()
 }
 
 #[cfg(test)]

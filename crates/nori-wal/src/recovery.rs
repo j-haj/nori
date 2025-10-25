@@ -89,57 +89,14 @@ async fn recover_segment(
     let mut buffer = vec![0u8; file_size as usize];
     file.read_exact(&mut buffer).await?;
 
-    let mut offset = 0u64;
-    let mut valid_records = 0u64;
-    let mut last_valid_offset = 0u64;
-
-    // Scan records until we hit corruption or EOF
-    while offset < file_size {
-        let remaining = &buffer[offset as usize..];
-
-        match Record::decode(remaining) {
-            Ok((_record, size)) => {
-                // Valid record
-                valid_records += 1;
-                offset += size as u64;
-                last_valid_offset = offset;
-            }
-            Err(RecordError::Incomplete) => {
-                // Partial record at tail - this is expected during recovery
-                break;
-            }
-            Err(RecordError::CrcMismatch { .. }) => {
-                // Corruption detected - truncate here
-                break;
-            }
-            Err(_) => {
-                // Other error (invalid compression, etc.) - truncate here
-                break;
-            }
-        }
-    }
+    // Scan for valid records
+    let (valid_records, last_valid_offset) = scan_valid_records(&buffer, file_size);
 
     let bytes_truncated = file_size - last_valid_offset;
 
-    // If we need to truncate, use atomic temp file + rename pattern
+    // Truncate corrupted data if needed
     if bytes_truncated > 0 {
-        let temp_path = path.with_extension("wal.tmp");
-
-        // Write valid data to temp file
-        let mut temp_file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .open(&temp_path)
-            .await?;
-
-        temp_file.write_all(&buffer[..last_valid_offset as usize]).await?;
-        temp_file.sync_all().await?;
-        drop(temp_file);
-
-        // Atomic rename: if this succeeds, the old file is replaced atomically
-        // If we crash before this, the original file is unchanged
-        tokio::fs::rename(&temp_path, &path).await?;
+        truncate_segment_atomically(&path, &buffer, last_valid_offset).await?;
 
         // Emit corruption event
         meter.emit(VizEvent::Wal(WalEvt {
@@ -165,27 +122,93 @@ async fn recover_segment(
     })
 }
 
+/// Scans a buffer for valid records, returning the count and last valid offset.
+///
+/// Stops scanning when corruption or incomplete records are detected.
+fn scan_valid_records(buffer: &[u8], file_size: u64) -> (u64, u64) {
+    let mut offset = 0u64;
+    let mut valid_records = 0u64;
+    let mut last_valid_offset = 0u64;
+
+    while offset < file_size {
+        let remaining = &buffer[offset as usize..];
+
+        match Record::decode(remaining) {
+            Ok((_record, size)) => {
+                // Valid record
+                valid_records += 1;
+                offset += size as u64;
+                last_valid_offset = offset;
+            }
+            Err(RecordError::Incomplete) => {
+                // Partial record at tail - this is expected during recovery
+                break;
+            }
+            Err(RecordError::CrcMismatch { .. }) | Err(_) => {
+                // Corruption or other error - truncate here
+                break;
+            }
+        }
+    }
+
+    (valid_records, last_valid_offset)
+}
+
+/// Atomically truncates a segment file using temp file + rename pattern.
+///
+/// This ensures the original file is unchanged if a crash occurs during truncation.
+async fn truncate_segment_atomically(
+    path: &std::path::PathBuf,
+    buffer: &[u8],
+    last_valid_offset: u64,
+) -> Result<(), SegmentError> {
+    let temp_path = path.with_extension("wal.tmp");
+
+    // Write valid data to temp file
+    let mut temp_file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&temp_path)
+        .await?;
+
+    temp_file.write_all(&buffer[..last_valid_offset as usize]).await?;
+    temp_file.sync_all().await?;
+    drop(temp_file);
+
+    // Atomic rename: if this succeeds, the old file is replaced atomically
+    // If we crash before this, the original file is unchanged
+    tokio::fs::rename(&temp_path, path).await?;
+
+    Ok(())
+}
+
 /// Finds all segment files in a directory.
 async fn find_all_segments(dir: &Path) -> Result<Vec<u64>, SegmentError> {
     let mut entries = tokio::fs::read_dir(dir).await?;
     let mut segment_ids = Vec::new();
 
     while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-        if let Some(ext) = path.extension() {
-            if ext == "wal" {
-                if let Some(stem) = path.file_stem() {
-                    if let Some(stem_str) = stem.to_str() {
-                        if let Ok(id) = stem_str.parse::<u64>() {
-                            segment_ids.push(id);
-                        }
-                    }
-                }
-            }
+        if let Some(id) = parse_segment_id_from_path(&entry.path()) {
+            segment_ids.push(id);
         }
     }
 
     Ok(segment_ids)
+}
+
+/// Parses a segment ID from a .wal file path.
+///
+/// Returns None if the path is not a valid .wal file or cannot be parsed.
+fn parse_segment_id_from_path(path: &Path) -> Option<u64> {
+    // Check extension is "wal"
+    if path.extension()?.to_str()? != "wal" {
+        return None;
+    }
+
+    // Parse the filename stem as a u64
+    let stem_str = path.file_stem()?.to_str()?;
+    stem_str.parse::<u64>().ok()
 }
 
 /// Generates the path for a segment file.
