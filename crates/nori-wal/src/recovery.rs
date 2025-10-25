@@ -230,6 +230,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = SegmentConfig {
             dir: temp_dir.path().to_path_buf(),
+            preallocate: false,
             ..Default::default()
         };
 
@@ -264,6 +265,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = SegmentConfig {
             dir: temp_dir.path().to_path_buf(),
+            preallocate: false,
             ..Default::default()
         };
 
@@ -307,6 +309,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let config = SegmentConfig {
             dir: temp_dir.path().to_path_buf(),
+            preallocate: false,
             ..Default::default()
         };
 
@@ -374,6 +377,7 @@ mod tests {
         let config = SegmentConfig {
             dir: temp_dir.path().to_path_buf(),
             max_segment_size: 100, // Force rotation
+            preallocate: false,
             ..Default::default()
         };
 
