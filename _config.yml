@@ -6,8 +6,8 @@
 # Site settings
 title: nori-wal Documentation
 description: Production-ready Write-Ahead Log for Rust
-baseurl: "/norikv" # the subpath of your site, e.g. /blog
-url: "https://norikv.github.io" # the base hostname & protocol
+baseurl: "/nori" # the subpath of your site, e.g. /blog
+url: "https://j-haj.github.io" # the base hostname & protocol
 
 # Theme
 remote_theme: just-the-docs/just-the-docs@v0.8.2
@@ -34,10 +34,8 @@ heading_anchors: true
 
 # Aux links for the upper right navigation
 aux_links:
-  "nori-wal on GitHub":
-    - "https://github.com/norikv/norikv"
-  "crates.io":
-    - "https://crates.io/crates/nori-wal"
+  "nori on GitHub":
+    - "https://github.com/j-haj/nori"
 
 # Makes Aux links open in a new tab
 aux_links_new_tab: true
@@ -65,7 +63,7 @@ footer_content: "Copyright © 2024 nori-wal contributors. Distributed under the 
 # Footer "Edit this page on GitHub" link
 gh_edit_link: true
 gh_edit_link_text: "Edit this page on GitHub"
-gh_edit_repository: "https://github.com/norikv/norikv"
+gh_edit_repository: "https://github.com/j-haj/nori"
 gh_edit_branch: "gh-pages"
 gh_edit_view_mode: "tree"
 
@@ -96,6 +94,11 @@ kramdown:
   syntax_highlighter_opts:
     block:
       line_numbers: false
+  parse_block_html: true
+
+# Custom CSS
+sass:
+  style: compressed
 
 # Plugins
 plugins:

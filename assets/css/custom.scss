@@ -1,0 +1,149 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+/* Custom styles for nori-wal documentation */
+
+/* Fix image sizing */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Better code block styling */
+pre {
+  overflow-x: auto;
+}
+
+code {
+  word-wrap: break-word;
+}
+
+/* Improve table readability */
+table {
+  width: 100%;
+  margin-bottom: 1.5rem;
+  border-collapse: collapse;
+}
+
+table th,
+table td {
+  padding: 0.5rem;
+  border: 1px solid #dee2e6;
+}
+
+table th {
+  background-color: #f8f9fa;
+  font-weight: 600;
+}
+
+/* Mermaid diagrams */
+.mermaid {
+  text-align: center;
+  margin: 1rem 0;
+}
+
+.mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Better spacing for lists */
+ul, ol {
+  margin-bottom: 1rem;
+}
+
+li {
+  margin-bottom: 0.25rem;
+}
+
+/* Callout boxes */
+.highlight {
+  background-color: #fff3cd;
+  border-left: 4px solid #ffc107;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.important {
+  background-color: #cce5ff;
+  border-left: 4px solid #004085;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.warning {
+  background-color: #f8d7da;
+  border-left: 4px solid #721c24;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.note {
+  background-color: #e7e7ff;
+  border-left: 4px solid #5050ff;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+/* Fix overly large headings */
+h1 {
+  font-size: 2rem !important;
+  margin-top: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+h2 {
+  font-size: 1.5rem !important;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+}
+
+h3 {
+  font-size: 1.25rem !important;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+h4 {
+  font-size: 1.1rem !important;
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Better spacing between sections */
+hr {
+  margin: 2rem 0;
+  border: 0;
+  border-top: 1px solid #e1e4e8;
+}
+
+/* Code example boxes */
+.code-example {
+  background-color: #f6f8fa;
+  border: 1px solid #d1d5da;
+  border-radius: 3px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+/* Make sure content doesn't overflow */
+.main-content {
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+
+/* Fix for very long code lines */
+pre code {
+  display: block;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Responsive tables */
+@media (max-width: 768px) {
+  table {
+    font-size: 0.875rem;
+  }
+}
